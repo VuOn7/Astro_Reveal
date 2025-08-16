@@ -3,7 +3,7 @@ Understand your Astrological alignment via Vedic, Chinese, Western and Mayan
 
 
 
-# WANT TO FIND OUT wHAT ASTROLOGY TALKS ABOUT YOU?
+# WANT TO FIND OUT WHAT PLANETARY ALIGNMENT SAYS ABOUT YOU?
 
 👉 [**Click here to open the app**](https://astroreveal-yfm2dfst8rhdijrdgfm25j.streamlit.app//)
 
