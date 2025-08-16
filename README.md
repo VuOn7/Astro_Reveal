@@ -2,6 +2,9 @@
 Understand your Astrological alignment via Vedic, Chinese, Western and Mayan
 
 
-# WANT TO TRY AND FIND OUT ABOUT YOURSELF?
 
-👉 [CLICK HERE AND YOU WILL BE REDIRECTED TO THE STREAMLIT APP](https://astroreveal-yfm2dfst8rhdijrdgfm25j.streamlit.app//)
+# WANT TO FIND OUT wHAT ASTROLOGY TALKS ABOUT YOU?
+
+👉 [**Click here to open the app**](https://your-app-name.streamlit.app/)
+
+[![Open in Streamlit](https://img.shields.io/badge/Launch%20in-Streamlit-red?style=for-the-badge&logo=streamlit)](https://your-app-name.streamlit.app/)
