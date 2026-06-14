@@ -1,50 +1,36 @@
 #!/usr/bin/env python3
 """
-llm_interpreter.py  (multi-provider: fallback OR consensus)
-===========================================================
-Two ways to generate a chart reading:
+llm_interpreter.py  (Gemini-only version)
+=========================================
+Generates dynamic, chart-specific astrology readings using Google Gemini.
 
-  generate_llm_interpretation(...)        -> FALLBACK chain (fast, 1 model)
-        Tries Claude -> DeepSeek -> Gemini, returns the first that works.
+Why this version is simple:
+- Talks to Gemini via Python's BUILT-IN urllib, so there are no extra libraries
+  to install (no anthropic, no openai needed).
+- Uses a Flash model, which is covered by Gemini's free tier.
 
-  generate_consensus_interpretation(...)  -> PANEL consensus (slower, N models)
-        Asks Claude, ChatGPT (OpenAI), Gemini, and DeepSeek to each read the
-        chart, then a judge model writes ONE reading keeping only what enough
-        of them independently agreed on, plus a "where they disagreed" note.
+SETUP:
+    export GEMINI_API_KEY="AIza..."        # your NEW key from aistudio.google.com
+    (Windows: setx GEMINI_API_KEY "AIza...")
 
-Only the providers whose API keys are set participate; missing ones are skipped.
-
-------------------------------------------------------------------------------
-SETUP
-------------------------------------------------------------------------------
-    pip install anthropic openai
-
-    export ANTHROPIC_API_KEY="sk-ant-..."   # console.anthropic.com  (paid)
-    export OPENAI_API_KEY="sk-..."          # platform.openai.com    (paid; no free API)
-    export DEEPSEEK_API_KEY="sk-..."        # platform.deepseek.com  (cheap)
-    export GEMINI_API_KEY="AIza..."         # aistudio.google.com    (FREE, no card)
-
-Note: ChatGPT's *free* version is a website, not an API. Using "ChatGPT" from
-code means OpenAI's paid API. Consensus needs >=2 keys set to do anything useful.
-------------------------------------------------------------------------------
+Never put the key in this file or in your GitHub repo — only in the env var.
 """
 
 import os
 import json
+import urllib.request
+import urllib.error
 
-# --- Model names (current as of 2026; update if a provider renames one) -----
-ANTHROPIC_MODEL = "claude-sonnet-4-6"      # cheaper: "claude-haiku-4-5-20251001"
-OPENAI_MODEL    = "gpt-4o-mini"            # cheap OpenAI model
-DEEPSEEK_MODEL  = "deepseek-chat"
-GEMINI_MODEL    = "gemini-2.5-flash"       # free-tier eligible
-
-OPENAI_BASE_URL   = "https://api.openai.com/v1"
-DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-GEMINI_BASE_URL   = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GEMINI_MODEL = "gemini-2.5-flash"   # free-tier eligible; "gemini-2.0-flash" also works
+GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL}:generateContent"
+)
 
 
 # ---------------------------------------------------------------------------
 # 1. Structure the chart (unique numbers in => unique reading out).
+#    Kept identical so the rest of your app and feedback_collector still work.
 # ---------------------------------------------------------------------------
 def build_chart_summary(birth_data, vedic_positions, tropical_positions,
                         four_pillars, tzolkin, nakshatra_info, ascendant=None):
@@ -88,7 +74,7 @@ def build_chart_summary(birth_data, vedic_positions, tropical_positions,
 
 
 # ---------------------------------------------------------------------------
-# 2. Prompts.
+# 2. Prompt.
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = """You are an experienced multi-tradition astrologer writing a \
 personalised reading. You are given ONE person's exact chart as JSON.
@@ -103,21 +89,8 @@ portrait rather than four disconnected lists. Note where they agree or tension.
 - Be honest in framing: describe tendencies and themes, not fixed predictions.
 - Length: about 500-700 words unless told otherwise."""
 
-JUDGE_SYSTEM = """You are the editor of a panel of {n} astrologers who each \
-independently read the SAME chart. Produce ONE final reading.
 
-- Include ONLY interpretations that AT LEAST {k} of the {n} astrologers express \
-(the same theme/trait, even if worded differently).
-- Drop any claim only one astrologer made (unless {k} is 1).
-- Keep the concrete chart references (signs, degrees, nakshatra, pillars, kin) \
-that the agreeing astrologers cite, so it stays specific to this person.
-- End with a short section titled "Where the astrologers disagreed:" listing \
-2-4 points of divergence, one line each. If they were broadly aligned, say so.
-- Plain, warm language. Honest framing: tendencies, not fixed predictions.
-- About 400-600 words."""
-
-
-def _build_messages(chart, focus):
+def _build_prompt(chart, focus):
     focus_line = (f"\nFocus the reading on: {focus}.\n"
                   if focus and focus.lower() != "general" else "")
     user = ("Here is the person's chart as JSON. Write their reading.\n"
@@ -126,133 +99,84 @@ def _build_messages(chart, focus):
 
 
 # ---------------------------------------------------------------------------
-# 3. Provider call functions.
+# 3. Call Gemini using only the standard library.
 # ---------------------------------------------------------------------------
-def _call_anthropic(system, user):
-    import anthropic
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    resp = client.messages.create(model=ANTHROPIC_MODEL, max_tokens=1500,
-                                  system=system,
-                                  messages=[{"role": "user", "content": user}])
-    return "".join(b.text for b in resp.content if b.type == "text")
+def _call_gemini(system, user):
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set.")
 
+    body = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {"maxOutputTokens": 1500, "temperature": 0.85},
+    }
+    req = urllib.request.Request(
+        f"{GEMINI_URL}?key={api_key}",
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
 
-def _call_openai_compatible(system, user, *, api_key_env, base_url, model):
-    from openai import OpenAI
-    client = OpenAI(api_key=os.environ[api_key_env], base_url=base_url)
-    resp = client.chat.completions.create(
-        model=model, max_tokens=1500,
-        messages=[{"role": "system", "content": system},
-                  {"role": "user", "content": user}])
-    return resp.choices[0].message.content
-
-
-# Full panel, in priority order (also used as the fallback order).
-PANEL = [
-    ("Claude", "ANTHROPIC_API_KEY",
-     lambda s, u: _call_anthropic(s, u)),
-    ("ChatGPT (OpenAI)", "OPENAI_API_KEY",
-     lambda s, u: _call_openai_compatible(s, u, api_key_env="OPENAI_API_KEY",
-                                          base_url=OPENAI_BASE_URL, model=OPENAI_MODEL)),
-    ("Gemini", "GEMINI_API_KEY",
-     lambda s, u: _call_openai_compatible(s, u, api_key_env="GEMINI_API_KEY",
-                                          base_url=GEMINI_BASE_URL, model=GEMINI_MODEL)),
-    ("DeepSeek", "DEEPSEEK_API_KEY",
-     lambda s, u: _call_openai_compatible(s, u, api_key_env="DEEPSEEK_API_KEY",
-                                          base_url=DEEPSEEK_BASE_URL, model=DEEPSEEK_MODEL)),
-]
-
-
-def _run_panel(system, user):
-    """Call every provider whose key is set. Returns (readings, notes)."""
-    readings, notes = [], []
-    for name, key_env, call in PANEL:
-        if not os.environ.get(key_env):
-            notes.append(f"{name}: skipped (no {key_env})")
-            continue
-        try:
-            t = call(system, user)
-            if t and t.strip():
-                readings.append((name, t.strip()))
-            else:
-                notes.append(f"{name}: empty response")
-        except ImportError as e:
-            notes.append(f"{name}: library not installed ({e})")
-        except Exception as e:
-            notes.append(f"{name}: {type(e).__name__} - {e}")
-    return readings, notes
+    candidates = payload.get("candidates", [])
+    if not candidates:
+        # Usually means the prompt or output was blocked by a safety filter.
+        raise RuntimeError("Gemini returned no candidates: "
+                           + json.dumps(payload)[:300])
+    parts = candidates[0].get("content", {}).get("parts", [])
+    return "".join(p.get("text", "") for p in parts).strip()
 
 
 # ---------------------------------------------------------------------------
-# 4a. FALLBACK mode: first provider that works.
+# 4. Public function the app calls.
 # ---------------------------------------------------------------------------
 def generate_llm_interpretation(structured_chart, focus="general", show_provider=True):
-    system, user = _build_messages(structured_chart, focus)
-    notes = []
-    for name, key_env, call in PANEL:
-        if not os.environ.get(key_env):
-            notes.append(f"{name}: no key ({key_env})")
-            continue
-        try:
-            t = call(system, user)
-            if t and t.strip():
-                return t + (f"\n\n---\n*Generated by {name}.*" if show_provider else "")
-            notes.append(f"{name}: empty response")
-        except ImportError as e:
-            notes.append(f"{name}: library not installed ({e})")
-        except Exception as e:
-            notes.append(f"{name}: {type(e).__name__} - {e}")
-    return ("Could not generate a reading. Providers tried:\n- "
-            + "\n- ".join(notes)
-            + "\n\nSet at least one key (the free GEMINI_API_KEY works).")
+    try:
+        text = _call_gemini(*_build_prompt(structured_chart, focus))
+        if not text:
+            return "Gemini returned an empty response — please try again."
+        if show_provider:
+            text += "\n\n---\n*Generated by Google Gemini.*"
+        return text
+
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "ignore")[:300]
+        if e.code == 429:
+            return ("Gemini's free-tier rate limit was hit (about 15 requests per "
+                    "minute). Wait a minute and try again.")
+        if e.code in (400, 401, 403):
+            return ("Gemini rejected the request. Check that GEMINI_API_KEY is set, "
+                    "valid, and starts with 'AIza'. "
+                    f"Details: {detail}")
+        return f"Gemini error {e.code}: {detail}"
+    except urllib.error.URLError as e:
+        return f"Could not reach Gemini (network/connection issue): {e.reason}"
+    except RuntimeError as e:
+        return f"AI interpretation unavailable: {e}"
+    except Exception as e:
+        return f"AI interpretation could not be generated ({type(e).__name__}: {e})."
 
 
 # ---------------------------------------------------------------------------
-# 4b. CONSENSUS mode: panel reads, judge keeps what they agree on.
+# 5. Compatibility shim: if your app still calls the old consensus function,
+#    it keeps working by just returning a single Gemini reading.
 # ---------------------------------------------------------------------------
 def generate_consensus_interpretation(structured_chart, focus="general",
                                       min_agreement="all"):
-    """
-    min_agreement : "all" (default) keeps only what every available model said.
-                    An integer keeps claims made by at least that many models
-                    (e.g. 2 or 3 -> richer, less generic).
-    """
-    system, user = _build_messages(structured_chart, focus)
-    readings, notes = _run_panel(system, user)
+    return generate_llm_interpretation(structured_chart, focus)
 
-    if not readings:
-        return "No models were available:\n- " + "\n- ".join(notes)
 
-    if len(readings) == 1:
-        name, text = readings[0]
-        return (text + f"\n\n---\n*Only {name} responded, so this is a single "
-                "reading — not a consensus. Add more API keys to cross-check.*")
-
-    n = len(readings)
-    k = n if min_agreement in ("all", None) else max(1, min(int(min_agreement), n))
-
-    labels = "ABCDEFGH"
-    panel_text = "\n\n".join(f"=== Astrologer {labels[i]} ({nm}) ===\n{tx}"
-                             for i, (nm, tx) in enumerate(readings))
-    judge_system = JUDGE_SYSTEM.format(n=n, k=k)
-    judge_user = ("Independent readings of the same chart follow. Produce the "
-                  "consensus reading.\n\n" + panel_text)
-
-    # Judge = first available panel provider (prefers Claude).
-    judge_call = judge_name = None
-    for nm, key_env, call in PANEL:
-        if os.environ.get(key_env):
-            judge_call, judge_name = call, nm
-            break
-    try:
-        final = judge_call(judge_system, judge_user)
-    except Exception as e:
-        return f"Got {n} readings but the consensus step failed: {type(e).__name__} - {e}"
-
-    participants = ", ".join(nm for nm, _ in readings)
-    agree_desc = "all agreed on" if k == n else f"at least {k} of {n} agreed on"
-    header = (f"*Consensus of {n} models ({participants}) — keeping what "
-              f"{agree_desc}. Synthesised by {judge_name}.*\n\n")
-    if notes:
-        header += "*(Skipped/failed: " + "; ".join(notes) + ")*\n\n"
-    return header + final
+if __name__ == "__main__":
+    # Offline structure test (no network call).
+    demo = build_chart_summary(
+        {"date": "1990-01-01", "time": "12:00", "lat": 27.7, "lon": 85.3, "timezone": "UTC"},
+        {"Sun": 280.0, "Moon": 45.0}, {"Sun": 280.0, "Moon": 45.0},
+        {"year": (("Geng", "Yang Metal"), ("Wu", "Horse")),
+         "month": (("Ji", "Yin Earth"), ("Chou", "Ox")),
+         "day": (("Jia", "Yang Wood"), ("Zi", "Rat")),
+         "hour": (("Bing", "Yang Fire"), ("Wu", "Horse"))},
+        {"kin": 100, "day_sign": "Ahau", "galactic_tone": 9},
+        {"name": "Rohini", "lord": "Moon", "pada": 2}, ascendant=130.0)
+    print("build_chart_summary OK. Keys:", list(demo.keys()))

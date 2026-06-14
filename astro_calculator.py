@@ -23,6 +23,10 @@ import pytz
 import io
 from llm_interpreter import build_chart_summary, generate_llm_interpretation, generate_consensus_interpretation
 from feedback_collector import build_feedback_form, record_response, chart_id_for, summarize_log
+import os
+import streamlit as st
+if "GEMINI_API_KEY" in st.secrets:
+    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
 
 # Add this for clickable map
 try:
