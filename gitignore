@@ -1,0 +1,14 @@
+# Never commit secrets
+.env
+.streamlit/secrets.toml
+*.key
+
+# Collected user data (and local logs)
+feedback_log.jsonl
+*.jsonl
+
+# Python junk
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -3,3 +3,5 @@ pandas
 pytz
 folium
 streamlit-folium
+anthropic
+openai
