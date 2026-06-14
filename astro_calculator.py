@@ -24,9 +24,11 @@ import io
 from llm_interpreter import build_chart_summary, generate_llm_interpretation, generate_consensus_interpretation
 from feedback_collector import build_feedback_form, record_response, chart_id_for, summarize_log
 import os
-import streamlit as st
-if "GEMINI_API_KEY" in st.secrets:
-    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    pass
 
 # Add this for clickable map
 try:
@@ -1005,6 +1007,71 @@ def main():
             except Exception as e:
                 st.error(f"Calculation error: {str(e)}")
                 st.info("Please check your birth details and try again")
+
+    # ================================================================
+    # AI READING + FEEDBACK
+    # Placed at the end of main() and gated on a calculated chart, so
+    # these render on every rerun (their buttons work) rather than only
+    # on the single run where "Calculate Complete Chart" was clicked.
+    # ================================================================
+    if 'calculation_results' in st.session_state:
+        results = st.session_state['calculation_results']
+        nak = calc.get_nakshatra_details(results['vedic_positions']['Moon'])
+        _asc = None
+        if results.get('include_houses') and results.get('houses'):
+            _asc = results['houses'].get('1')
+        chart = build_chart_summary(
+            results['birth_data'],
+            results['vedic_positions'],
+            results['tropical_positions'],
+            results['four_pillars'],
+            results['tzolkin'],
+            nak,
+            ascendant=_asc,
+        )
+
+        # ---- AI reading ----
+        st.header("AI-Powered Personalized Reading")
+        focus = st.selectbox(
+            "Focus area",
+            ["general", "career", "relationships", "health", "spiritual path"],
+            key="ai_focus",
+        )
+        if st.button("Generate Personalized AI Reading", type="primary", key="ai_btn"):
+            with st.spinner("Reading the chart with Gemini..."):
+                st.session_state['ai_reading'] = generate_llm_interpretation(chart, focus=focus)
+        if 'ai_reading' in st.session_state:
+            st.markdown(st.session_state['ai_reading'])
+
+        # ---- Blind feedback (data collection) ----
+        st.header("Help improve the readings")
+        st.caption("Pick the description that fits you best. Answers are stored "
+                   "anonymously and used to measure how accurate the system is.")
+        consent = st.checkbox("I agree to share my answers anonymously", key="fb_consent")
+        form = build_feedback_form(chart, n_options=4)
+        choices = {}
+        for i, q in enumerate(form):
+            choices[i] = st.radio(
+                f"**{q['factor']}** — which fits you?",
+                options=list(range(len(q["options"]))),
+                format_func=lambda x, q=q: q["options"][x],
+                index=None,
+                key=f"fb_{i}",
+            )
+        if st.button("Submit my answers", key="fb_submit"):
+            if consent:
+                cid = chart_id_for(chart)
+                saved = 0
+                for i, q in enumerate(form):
+                    if choices.get(i) is not None:
+                        record_response("feedback_log.jsonl", cid, q, choices[i], consent=True)
+                        saved += 1
+                st.success(f"Saved {saved} answer(s) — thank you.")
+            else:
+                st.warning("Please tick the consent box first.")
+
+        with st.expander("Data quality so far (admin)"):
+            st.json(summarize_log("feedback_log.jsonl"))
 
 if __name__ == "__main__":
     main()
