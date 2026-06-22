@@ -1,19 +1,34 @@
 #!/usr/bin/env python3
 """
-llm_interpreter.py  (Gemini-only version)
-=========================================
+llm_interpreter.py  (Gemini-only version, fixed + upgraded)
+===========================================================
 Generates dynamic, chart-specific astrology readings using Google Gemini.
 
-Why this version is simple:
-- Talks to Gemini via Python's BUILT-IN urllib, so there are no extra libraries
-  to install (no anthropic, no openai needed).
-- Uses a Flash model, which is covered by Gemini's free tier.
+WHAT WAS BROKEN BEFORE
+----------------------
+Gemini 2.5 Flash is a *reasoning* model. By default it spends "thinking"
+tokens before writing, and Google counts those thinking tokens against
+`maxOutputTokens`. With the old config (maxOutputTokens=1500) the model
+burned almost the whole budget thinking, hit the MAX_TOKENS limit, and
+returned an (almost) empty answer -> the "2 lines" problem.
+
+THE FIX (three parts)
+---------------------
+1. `thinkingConfig.thinkingBudget = 0`  -> turn thinking off so the WHOLE
+   budget goes to visible text.
+2. `maxOutputTokens = 8192`             -> plenty of room for a full reading.
+3. Robust parsing                       -> we detect MAX_TOKENS / empty /
+   safety-blocked responses and report them clearly instead of failing
+   silently, and we ignore any stray "thought" parts.
+
+We also upgraded the prompt so the model returns clean, sectioned Markdown
+(headers, bold, short paragraphs) that renders beautifully in Streamlit.
 
 SETUP:
-    export GEMINI_API_KEY="AIza..."        # your NEW key from aistudio.google.com
+    export GEMINI_API_KEY="AIza..."        # key from aistudio.google.com
     (Windows: setx GEMINI_API_KEY "AIza...")
-
-Never put the key in this file or in your GitHub repo — only in the env var.
+Never put the key in this file or in your GitHub repo — only in the env var
+(or, on Streamlit Cloud, in .streamlit/secrets.toml).
 """
 
 import os
@@ -21,11 +36,19 @@ import json
 import urllib.request
 import urllib.error
 
-GEMINI_MODEL = "gemini-2.5-flash"   # free-tier eligible; "gemini-2.0-flash" also works
+# "gemini-2.5-flash" is free-tier eligible. "gemini-2.0-flash" also works and
+# is NOT a thinking model, so it's a fine fallback if you ever want one.
+GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
 )
+
+# Generation settings. These are the numbers that actually fixed the bug.
+MAX_OUTPUT_TOKENS = 8192   # was 1500 -> too small once thinking ate into it
+THINKING_BUDGET = 0        # 0 = off (all budget -> visible text). Try 512 for
+                           #     a little reasoning if you want richer prose.
+TEMPERATURE = 0.9          # warm, varied, but still grounded
 
 
 # ---------------------------------------------------------------------------
@@ -74,33 +97,97 @@ def build_chart_summary(birth_data, vedic_positions, tropical_positions,
 
 
 # ---------------------------------------------------------------------------
-# 2. Prompt.
+# 2. Prompt.  Now asks for sectioned Markdown so the output looks great.
 # ---------------------------------------------------------------------------
-SYSTEM_PROMPT = """You are an experienced multi-tradition astrologer writing a \
-personalised reading. You are given ONE person's exact chart as JSON.
+SYSTEM_PROMPT = """You are a warm, insightful, multi-tradition astrologer \
+writing a single person's personalised reading. You are given ONE person's \
+exact birth chart as JSON, combining Vedic (sidereal), Western (tropical), \
+Chinese (Four Pillars / Bazi) and Mayan (Tzolkin) systems.
 
-Rules:
-- Ground EVERY claim in the specific data: cite exact signs, degrees, the \
-nakshatra + pada, the day-master pillar, and the Tzolkin kin/tone. Generic \
-sun-sign statements that would apply to anyone are not allowed.
-- Weave the four traditions (Vedic, Western, Chinese, Mayan) into one coherent \
-portrait rather than four disconnected lists. Note where they agree or tension.
-- Write in clear, warm, plain language. No jargon dumps.
-- Be honest in framing: describe tendencies and themes, not fixed predictions.
-- Length: about 500-700 words unless told otherwise."""
+WRITE THE READING AS CLEAN MARKDOWN, using exactly this structure:
+
+# Your Cosmic Portrait
+A 3-4 sentence opening that captures the overall feel of this specific chart \
+(name the Sun sign, the Ascendant if present, and the Moon's nakshatra).
+
+## The Threads That Define You
+2-3 short paragraphs weaving the four traditions into ONE coherent portrait. \
+Explicitly note where systems AGREE and where they create interesting TENSION.
+
+## Vedic & Western — Mind and Soul
+A paragraph grounded in the exact placements: cite specific signs, degrees, \
+the nakshatra + pada, and the rising sign.
+
+## Chinese Four Pillars — Your Elemental Engine
+A paragraph on the Day Master (day-pillar stem + element) as their core nature, \
+plus how the surrounding pillars colour it.
+
+## Mayan Signature — Your Spiritual Frequency
+A short paragraph on the Tzolkin day-sign, galactic tone and kin.
+
+## Living It Well
+A practical, encouraging close: 3-4 concrete strengths to lean on and 2-3 \
+growth edges, phrased as tendencies and choices — never fixed fate.
+
+RULES:
+- Ground EVERY claim in the actual data. Cite exact signs, degrees, nakshatra, \
+day-master pillar and Tzolkin kin/tone. No generic sun-sign lines that would \
+fit anyone.
+- Warm, clear, plain language. Use **bold** for key terms. Keep paragraphs short.
+- Be honest in framing: describe tendencies and themes, not predictions.
+- Total length: about 600-800 words."""
 
 
 def _build_prompt(chart, focus):
-    focus_line = (f"\nFocus the reading on: {focus}.\n"
-                  if focus and focus.lower() != "general" else "")
-    user = ("Here is the person's chart as JSON. Write their reading.\n"
-            f"{focus_line}\n```json\n{json.dumps(chart, indent=2, default=str)}\n```")
+    focus_line = ""
+    if focus and focus.lower() != "general":
+        focus_line = (f"\nGive extra weight to the **{focus}** area of life, "
+                      f"and add a short '## Focus: {focus.title()}' section near "
+                      f"the end with specific guidance.\n")
+    user = ("Here is the person's chart as JSON. Write their reading now, "
+            "following the required Markdown structure.\n"
+            f"{focus_line}\n```json\n"
+            f"{json.dumps(chart, indent=2, default=str)}\n```")
     return SYSTEM_PROMPT, user
 
 
 # ---------------------------------------------------------------------------
 # 3. Call Gemini using only the standard library.
 # ---------------------------------------------------------------------------
+def _extract_text(payload):
+    """Pull visible text out of a Gemini response, skipping 'thought' parts,
+    and surface useful diagnostics instead of failing silently."""
+    candidates = payload.get("candidates", [])
+    if not candidates:
+        # Almost always a blocked prompt.
+        fb = payload.get("promptFeedback", {})
+        reason = fb.get("blockReason")
+        if reason:
+            raise RuntimeError(f"Prompt blocked by safety filter ({reason}).")
+        raise RuntimeError("Gemini returned no candidates: "
+                           + json.dumps(payload)[:300])
+
+    cand = candidates[0]
+    finish = cand.get("finishReason")
+    parts = cand.get("content", {}).get("parts", []) or []
+
+    # Keep only real text parts (a thinking part may carry "thought": true).
+    text = "".join(
+        p.get("text", "")
+        for p in parts
+        if isinstance(p, dict) and not p.get("thought")
+    ).strip()
+
+    if not text and finish == "MAX_TOKENS":
+        raise RuntimeError(
+            "Gemini hit the token limit before writing any text. "
+            "Lower THINKING_BUDGET or raise MAX_OUTPUT_TOKENS in llm_interpreter.py."
+        )
+    if not text and finish == "SAFETY":
+        raise RuntimeError("Gemini blocked the response for safety reasons.")
+    return text, finish
+
+
 def _call_gemini(system, user):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -109,7 +196,12 @@ def _call_gemini(system, user):
     body = {
         "system_instruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": user}]}],
-        "generationConfig": {"maxOutputTokens": 1500, "temperature": 0.85},
+        "generationConfig": {
+            "maxOutputTokens": MAX_OUTPUT_TOKENS,
+            "temperature": TEMPERATURE,
+            # THE KEY FIX: stop thinking tokens from eating the whole budget.
+            "thinkingConfig": {"thinkingBudget": THINKING_BUDGET},
+        },
     }
     req = urllib.request.Request(
         f"{GEMINI_URL}?key={api_key}",
@@ -117,16 +209,11 @@ def _call_gemini(system, user):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=90) as resp:
         payload = json.loads(resp.read().decode("utf-8"))
 
-    candidates = payload.get("candidates", [])
-    if not candidates:
-        # Usually means the prompt or output was blocked by a safety filter.
-        raise RuntimeError("Gemini returned no candidates: "
-                           + json.dumps(payload)[:300])
-    parts = candidates[0].get("content", {}).get("parts", [])
-    return "".join(p.get("text", "") for p in parts).strip()
+    text, _finish = _extract_text(payload)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -136,9 +223,12 @@ def generate_llm_interpretation(structured_chart, focus="general", show_provider
     try:
         text = _call_gemini(*_build_prompt(structured_chart, focus))
         if not text:
-            return "Gemini returned an empty response — please try again."
+            return ("Gemini returned an empty response. Try again — if it keeps "
+                    "happening, set THINKING_BUDGET=0 and MAX_OUTPUT_TOKENS=8192 "
+                    "in llm_interpreter.py.")
         if show_provider:
-            text += "\n\n---\n*Generated by Google Gemini.*"
+            text += "\n\n---\n*Generated by Google Gemini · for reflection and "
+            text += "self-understanding, not fixed prediction.*"
         return text
 
     except urllib.error.HTTPError as e:
@@ -180,3 +270,5 @@ if __name__ == "__main__":
         {"kin": 100, "day_sign": "Ahau", "galactic_tone": 9},
         {"name": "Rohini", "lord": "Moon", "pada": 2}, ascendant=130.0)
     print("build_chart_summary OK. Keys:", list(demo.keys()))
+    print(f"Model={GEMINI_MODEL}  max_out={MAX_OUTPUT_TOKENS}  "
+          f"thinking_budget={THINKING_BUDGET}")

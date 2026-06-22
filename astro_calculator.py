@@ -41,11 +41,212 @@ except ImportError:
 
 # Configure page
 st.set_page_config(
-    page_title="Professional Cosmic Calculator",
-    page_icon="⭐",
+    page_title="Cosmic Calculator",
+    page_icon="✦",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ===========================================================================
+#  COSMIC THEME
+#  All visual styling lives here. None of the calculation logic below is
+#  touched — this only changes how the app looks.
+# ===========================================================================
+COSMIC_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,300;0,400;0,500;1,400&display=swap');
+
+/* ---- App background: deep space with drifting star-glows ---- */
+.stApp {
+    background:
+        radial-gradient(circle at 18% 18%, rgba(124, 92, 255, 0.18), transparent 42%),
+        radial-gradient(circle at 82% 12%, rgba(233, 196, 106, 0.10), transparent 40%),
+        radial-gradient(circle at 60% 85%, rgba(72, 149, 239, 0.14), transparent 45%),
+        linear-gradient(160deg, #0a0a1a 0%, #12102b 45%, #0d0b1f 100%);
+    background-attachment: fixed;
+    color: #e9e7f5;
+    font-family: 'Spectral', Georgia, serif;
+}
+
+/* readable body text everywhere */
+.stApp, .stApp p, .stApp li, .stApp label, .stApp span, .stMarkdown {
+    color: #e3e0f2;
+}
+
+/* ---- Headings ---- */
+h1, h2, h3, h4 {
+    font-family: 'Cinzel', serif !important;
+    letter-spacing: 0.5px;
+    color: #f4d58d !important;
+}
+h2 { border-bottom: 1px solid rgba(244, 213, 141, 0.18); padding-bottom: 0.3em; }
+
+/* ---- Hero banner ---- */
+.cosmic-hero {
+    text-align: center;
+    padding: 2.2rem 1rem 1.4rem 1rem;
+    margin-bottom: 0.5rem;
+}
+.cosmic-hero h1 {
+    font-size: 2.7rem;
+    margin: 0;
+    background: linear-gradient(92deg, #f4d58d 0%, #e9c46a 30%, #a98bff 75%, #7c5cff 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 0 30px rgba(169, 139, 255, 0.25);
+}
+.cosmic-hero p {
+    font-style: italic;
+    color: #b9b3d6 !important;
+    font-size: 1.05rem;
+    margin-top: 0.4rem;
+    letter-spacing: 1px;
+}
+.cosmic-hero .rule {
+    width: 120px; height: 2px; margin: 0.9rem auto 0 auto;
+    background: linear-gradient(90deg, transparent, #f4d58d, transparent);
+}
+
+/* ---- Sidebar ---- */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, rgba(20, 16, 42, 0.96), rgba(13, 11, 31, 0.96));
+    border-right: 1px solid rgba(244, 213, 141, 0.12);
+}
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+    color: #f4d58d !important;
+}
+
+/* ---- Metric cards ---- */
+[data-testid="stMetric"] {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(244, 213, 141, 0.18);
+    border-radius: 14px;
+    padding: 14px 16px;
+    backdrop-filter: blur(6px);
+    transition: border-color .2s ease, transform .2s ease;
+}
+[data-testid="stMetric"]:hover {
+    border-color: rgba(244, 213, 141, 0.5);
+    transform: translateY(-2px);
+}
+[data-testid="stMetricValue"] { color: #f4d58d !important; font-weight: 600; }
+[data-testid="stMetricLabel"] { color: #b9b3d6 !important; }
+
+/* ---- Buttons ---- */
+.stButton > button {
+    background: linear-gradient(92deg, #7c5cff, #a98bff);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 0.55rem 1.1rem;
+    font-family: 'Cinzel', serif;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    box-shadow: 0 6px 20px rgba(124, 92, 255, 0.35);
+    transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(124, 92, 255, 0.5);
+    filter: brightness(1.07);
+}
+.stDownloadButton > button {
+    background: rgba(244, 213, 141, 0.12);
+    color: #f4d58d;
+    border: 1px solid rgba(244, 213, 141, 0.4);
+    border-radius: 10px;
+    font-family: 'Cinzel', serif;
+}
+
+/* ---- Tabs ---- */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 6px;
+    background: rgba(255,255,255,0.03);
+    padding: 6px;
+    border-radius: 12px;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    color: #b9b3d6;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-family: 'Cinzel', serif;
+    font-size: 0.9rem;
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(92deg, rgba(124,92,255,0.35), rgba(169,139,255,0.35)) !important;
+    color: #f4d58d !important;
+    box-shadow: inset 0 0 0 1px rgba(244,213,141,0.3);
+}
+
+/* ---- Bordered containers used as 'cards' ---- */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(244, 213, 141, 0.18) !important;
+    border-radius: 16px;
+    backdrop-filter: blur(6px);
+}
+
+/* ---- The AI reading card: extra-special treatment ---- */
+.reading-card h1 { font-size: 1.9rem; }
+.reading-card h2 { font-size: 1.3rem; margin-top: 1.1rem; }
+.reading-card { line-height: 1.7; }
+
+/* ---- Inputs ---- */
+.stTextInput input, .stNumberInput input, .stDateInput input,
+[data-baseweb="select"] > div, .stTimeInput input {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(244,213,141,0.2) !important;
+    color: #e9e7f5 !important;
+    border-radius: 8px;
+}
+
+/* ---- Dataframes ---- */
+[data-testid="stDataFrame"] {
+    border: 1px solid rgba(244, 213, 141, 0.15);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* ---- Alert boxes (info/success/warning) ---- */
+[data-testid="stAlert"] {
+    border-radius: 12px;
+    backdrop-filter: blur(4px);
+}
+
+/* ---- Expanders ---- */
+.streamlit-expanderHeader, [data-testid="stExpander"] summary {
+    font-family: 'Cinzel', serif;
+    color: #f4d58d !important;
+}
+[data-testid="stExpander"] {
+    border: 1px solid rgba(244,213,141,0.15);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.02);
+}
+
+/* hide the default Streamlit chrome for a cleaner look */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+</style>
+"""
+
+
+def inject_css():
+    st.markdown(COSMIC_CSS, unsafe_allow_html=True)
+
+
+def cosmic_hero():
+    st.markdown(
+        """
+        <div class="cosmic-hero">
+            <h1>&#10022; Cosmic Calculator &#10022;</h1>
+            <p>Vedic &bull; Western &bull; Chinese &bull; Mayan &mdash; one chart, four ancient lenses</p>
+            <div class="rule"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 class ProfessionalAstrologicalCalculator:
     """High-precision astrological calculations using professional ephemeris standards"""
@@ -616,9 +817,9 @@ def create_clickable_map(lat=27.7172, lon=85.3240):
     return clicked_lat, clicked_lon
 
 def main():
-    st.title("Professional Multi-System Astrological Calculator")
-    st.markdown("*High-precision cosmic analysis across ancient wisdom traditions*")
-    
+    inject_css()
+    cosmic_hero()
+
     calc = ProfessionalAstrologicalCalculator()
     
     # Initialize session state for coordinates
@@ -781,15 +982,15 @@ def main():
                 }
                 
                 # Results display
-                st.header("Complete Astrological Analysis")
+                st.header("✦ Complete Astrological Analysis")
                 
                 # Create tabs for different systems
                 tabs = st.tabs([
-                    "Vedic Astrology", 
-                    "Western Astrology", 
-                    "Chinese Four Pillars", 
-                    "Mayan Tzolkin",
-                    "Comparative Analysis"
+                    "🕉 Vedic",
+                    "♋ Western",
+                    "☯ Chinese",
+                    "🌞 Mayan",
+                    "✦ Comparative"
                 ])
                 
                 with tabs[0]:  # Vedic
@@ -1031,20 +1232,31 @@ def main():
         )
 
         # ---- AI reading ----
-        st.header("AI-Powered Personalized Reading")
-        focus = st.selectbox(
-            "Focus area",
-            ["general", "career", "relationships", "health", "spiritual path"],
-            key="ai_focus",
-        )
-        if st.button("Generate Personalized AI Reading", type="primary", key="ai_btn"):
-            with st.spinner("Reading the chart with Gemini..."):
+        st.header("✦ AI-Powered Personalized Reading")
+        st.caption("A unique reading written from *your* exact placements — "
+                   "not a recycled sun-sign blurb.")
+        col_a, col_b = st.columns([3, 1])
+        with col_a:
+            focus = st.selectbox(
+                "Focus area",
+                ["general", "career", "relationships", "health", "spiritual path"],
+                key="ai_focus",
+            )
+        with col_b:
+            st.write("")
+            st.write("")
+            generate = st.button("Generate Reading ✨", type="primary", key="ai_btn")
+
+        if generate:
+            with st.spinner("Consulting the stars with Gemini…"):
                 st.session_state['ai_reading'] = generate_llm_interpretation(chart, focus=focus)
+
         if 'ai_reading' in st.session_state:
-            st.markdown(st.session_state['ai_reading'])
+            with st.container(border=True):
+                st.markdown(st.session_state['ai_reading'])
 
         # ---- Blind feedback (data collection) ----
-        st.header("Help improve the readings")
+        st.header("✦ Help improve the readings")
         st.caption("Pick the description that fits you best. Answers are stored "
                    "anonymously and used to measure how accurate the system is.")
         consent = st.checkbox("I agree to share my answers anonymously", key="fb_consent")
