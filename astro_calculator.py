@@ -871,8 +871,9 @@ def main():
             
         # Date and time inputs
         st.subheader("Birth Date & Time")
-        birth_date = st.date_input("Birth Date", value=datetime(1994, 2, 7).date())
-        birth_time = st.time_input("Birth Time", value=datetime.strptime("20:00", "%H:%M").time())
+        # Neutral placeholder defaults (not anyone's real birth details).
+        birth_date = st.date_input("Birth Date", value=datetime(2000, 1, 1).date())
+        birth_time = st.time_input("Birth Time", value=datetime.strptime("12:00", "%H:%M").time())
         
         timezone = st.selectbox(
             "Timezone",
