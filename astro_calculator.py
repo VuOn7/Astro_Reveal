@@ -16,6 +16,7 @@ Run:  streamlit run astro_calculator.py
 
 import hmac
 import os
+from html import escape
 from datetime import date, datetime, time
 
 import pandas as pd
@@ -434,10 +435,17 @@ def birth_form():
         p = s.place
         tz = chosen_timezone()
         source = f" (from {p['tz_from']})" if p.get("tz_from") and tz == p.get("tz") else ""
-        html(f'<div class="ar-place">{p["label"]}<small>{fmt_place(p["lat"], p["lon"])}. '
-             f'Timezone {tz}{source}.</small></div>')
+        html(f'<div class="ar-place">{escape(p["label"])}<small>{fmt_place(p["lat"], p["lon"])}. '
+             f'Timezone {escape(tz)}{escape(source)}.</small></div>')
         chart_settings()
-        if st.button("Reveal my chart", type="primary", width="stretch"):
+        if s.get("editing") and s.get("calculation_results"):
+            b1, b2 = st.columns(2)
+            if b1.button("Reveal my chart", type="primary", width="stretch"):
+                reveal()
+            if b2.button("Back to my chart", width="stretch"):
+                s.editing = False
+                st.rerun()
+        elif st.button("Reveal my chart", type="primary", width="stretch"):
             reveal()
     with right:
         birth_map()
@@ -466,8 +474,8 @@ def birth_summary(r):
     when = long_date(r["date_obj"])
     when += f" at {r['birth_data']['time']}" if r["time_known"] else ", time unknown"
     c1, c2 = st.columns([4, 1])
-    c1.markdown(f'<p class="ar-summary">Born <b>{when}</b> in <b>{r["place_label"]}</b> '
-                f'({r["birth_data"]["timezone"]}).</p>', unsafe_allow_html=True)
+    c1.markdown(f'<p class="ar-summary">Born <b>{when}</b> in <b>{escape(r["place_label"])}</b> '
+                f'({escape(r["birth_data"]["timezone"])}).</p>', unsafe_allow_html=True)
     if c2.button("Change birth details", width="stretch"):
         st.session_state.editing = True
         st.rerun()
