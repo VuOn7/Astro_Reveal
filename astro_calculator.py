@@ -67,7 +67,7 @@ APP_CSS = f"""
 .ar-wordmark {{ font-family: {ac.SERIF_FONT}; font-weight: 600; font-size: 1.5rem; color: {ac.INK};
   display: flex; align-items: center; gap: .5rem; }}
 .ar-hero-title {{ font-family: {ac.SERIF_FONT}; font-weight: 650; font-size: clamp(2.6rem, 5.2vw, 4.6rem);
-  line-height: 1.02; letter-spacing: -.025em; color: {ac.INK}; margin: 1.4rem 0 .6rem; }}
+  line-height: 1.02; letter-spacing: -.025em; color: {ac.INK}; margin: 1.4rem 0 .6rem; text-wrap: balance; }}
 .ar-hero-sub {{ font-size: 1.25rem; color: {ac.MUTED}; margin: 0 0 1.8rem; }}
 .ar-section {{ font-family: {ac.SERIF_FONT}; font-weight: 600; font-size: 2.1rem; color: {ac.INK};
   margin: 3rem 0 1rem; letter-spacing: -.01em; }}
@@ -90,7 +90,7 @@ APP_CSS = f"""
   border: 2px solid {ac.LINE}; box-shadow: 0 10px 28px -20px rgba(34,30,82,.4);
   transition: transform .15s ease, border-color .15s ease; }}
 .st-key-game button:hover {{ transform: translateY(-3px); border-color: {ac.VIOLET}; color: {ac.INK}; }}
-.st-key-game button p {{ font-size: 1.5rem; line-height: 1.35; font-weight: 600; }}
+.st-key-game button p {{ font-size: 1.5rem; line-height: 1.35; font-weight: 600; text-align: center; }}
 .ar-pips {{ display: flex; gap: .5rem; margin: .4rem 0 1.4rem; }}
 .ar-pips i {{ width: 2.6rem; height: .55rem; border-radius: 999px; background: {ac.LINE}; }}
 .ar-pips i.on {{ background: {ac.VIOLET}; }}
