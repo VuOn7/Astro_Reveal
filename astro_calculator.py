@@ -532,7 +532,7 @@ def render_results(r):
         c1, c2 = st.columns(2)
         if r["include_houses"]:
             sign, deg = ae.sign_of(r["vedic_ascendant"])
-            c1.metric("Ascendant (Lagna)", sign, fmt_deg(deg), delta_color="off")
+            c1.metric("Ascendant (Lagna)", f"{sign} {fmt_deg(deg)}")
         c2.metric("Ayanamsa (Lahiri)", fmt_deg(r["ayanamsa"]))
         st.write("**Planetary positions (sidereal):**")
         st.dataframe(positions_table(r["vedic_positions"]), hide_index=True)
@@ -548,9 +548,9 @@ def render_results(r):
         if r["include_houses"]:
             c1, c2 = st.columns(2)
             sign, deg = ae.sign_of(r["ascendant"])
-            c1.metric("Ascendant", sign, fmt_deg(deg), delta_color="off")
+            c1.metric("Ascendant", f"{sign} {fmt_deg(deg)}")
             sign, deg = ae.sign_of(r["mc"])
-            c2.metric("Midheaven (MC)", sign, fmt_deg(deg), delta_color="off")
+            c2.metric("Midheaven (MC)", f"{sign} {fmt_deg(deg)}")
         st.write("**Planetary positions (tropical):**")
         st.dataframe(positions_table(r["tropical_positions"]), hide_index=True)
         if r["include_houses"]:
@@ -679,10 +679,12 @@ def main():
         if location_method == "Manual Coordinates":
             st.session_state.lat_value = st.number_input(
                 "Latitude", min_value=-90.0, max_value=90.0,
-                value=float(st.session_state.lat_value), step=0.0001, format="%.4f")
+                value=float(st.session_state.lat_value), step=0.0001, format="%.4f",
+                key="lat_input")
             st.session_state.lon_value = st.number_input(
                 "Longitude", min_value=-180.0, max_value=180.0,
-                value=float(st.session_state.lon_value), step=0.0001, format="%.4f")
+                value=float(st.session_state.lon_value), step=0.0001, format="%.4f",
+                key="lon_input")
         elif location_method == "Major Cities":
             city = st.selectbox("City", list(MAJOR_CITIES))
             st.session_state.lat_value, st.session_state.lon_value = MAJOR_CITIES[city]
