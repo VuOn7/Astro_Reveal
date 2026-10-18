@@ -1,34 +1,20 @@
 #!/usr/bin/env python3
 """
-llm_interpreter.py  (Gemini-only version, fixed + upgraded)
-===========================================================
-Generates dynamic, chart-specific astrology readings using Google Gemini.
+llm_interpreter.py
+==================
+Writes the personalised reading with Google Gemini, using only the standard
+library (no SDK).
 
-WHAT WAS BROKEN BEFORE
-----------------------
-Gemini 2.5 Flash is a *reasoning* model. By default it spends "thinking"
-tokens before writing, and Google counts those thinking tokens against
-`maxOutputTokens`. With the old config (maxOutputTokens=1500) the model
-burned almost the whole budget thinking, hit the MAX_TOKENS limit, and
-returned an (almost) empty answer -> the "2 lines" problem.
+Notes:
+- gemini-2.5-flash is a "thinking" model and its thinking tokens count against
+  maxOutputTokens. Thinking is switched off (THINKING_BUDGET = 0) so the whole
+  budget goes to the visible reading.
+- Empty, truncated and safety-blocked responses are reported clearly.
 
-THE FIX (three parts)
----------------------
-1. `thinkingConfig.thinkingBudget = 0`  -> turn thinking off so the WHOLE
-   budget goes to visible text.
-2. `maxOutputTokens = 8192`             -> plenty of room for a full reading.
-3. Robust parsing                       -> we detect MAX_TOKENS / empty /
-   safety-blocked responses and report them clearly instead of failing
-   silently, and we ignore any stray "thought" parts.
-
-We also upgraded the prompt so the model returns clean, sectioned Markdown
-(headers, bold, short paragraphs) that renders beautifully in Streamlit.
-
-SETUP:
+Setup:
     export GEMINI_API_KEY="AIza..."        # key from aistudio.google.com
     (Windows: setx GEMINI_API_KEY "AIza...")
-Never put the key in this file or in your GitHub repo — only in the env var
-(or, on Streamlit Cloud, in .streamlit/secrets.toml).
+On Streamlit Cloud put it in the app's Secrets instead. Never commit the key.
 """
 
 import os
@@ -36,24 +22,21 @@ import json
 import urllib.request
 import urllib.error
 
-# "gemini-2.5-flash" is free-tier eligible. "gemini-2.0-flash" also works and
-# is NOT a thinking model, so it's a fine fallback if you ever want one.
+# gemini-2.5-flash is on the free tier. gemini-2.0-flash also works and is
+# not a thinking model.
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
 )
 
-# Generation settings. These are the numbers that actually fixed the bug.
-MAX_OUTPUT_TOKENS = 8192   # was 1500 -> too small once thinking ate into it
-THINKING_BUDGET = 0        # 0 = off (all budget -> visible text). Try 512 for
-                           #     a little reasoning if you want richer prose.
-TEMPERATURE = 0.9          # warm, varied, but still grounded
+MAX_OUTPUT_TOKENS = 8192
+THINKING_BUDGET = 0        # 0 = off; try 512 for a little reasoning
+TEMPERATURE = 0.9
 
 
 # ---------------------------------------------------------------------------
 # 1. Structure the chart (unique numbers in => unique reading out).
-#    Kept identical so the rest of your app and feedback_collector still work.
 # ---------------------------------------------------------------------------
 def build_chart_summary(birth_data, vedic_positions, tropical_positions,
                         four_pillars, tzolkin, nakshatra_info, ascendant=None):
@@ -97,7 +80,7 @@ def build_chart_summary(birth_data, vedic_positions, tropical_positions,
 
 
 # ---------------------------------------------------------------------------
-# 2. Prompt.  Now asks for sectioned Markdown so the output looks great.
+# 2. Prompt: sectioned Markdown.
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT = """You are a warm, insightful, multi-tradition astrologer \
 writing a single person's personalised reading. You are given ONE person's \
@@ -199,14 +182,14 @@ def _call_gemini(system, user):
         "generationConfig": {
             "maxOutputTokens": MAX_OUTPUT_TOKENS,
             "temperature": TEMPERATURE,
-            # THE KEY FIX: stop thinking tokens from eating the whole budget.
             "thinkingConfig": {"thinkingBudget": THINKING_BUDGET},
         },
     }
     req = urllib.request.Request(
-        f"{GEMINI_URL}?key={api_key}",
+        GEMINI_URL,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        # key in a header, not the URL, so it can't end up in logs
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=90) as resp:
@@ -223,9 +206,7 @@ def generate_llm_interpretation(structured_chart, focus="general", show_provider
     try:
         text = _call_gemini(*_build_prompt(structured_chart, focus))
         if not text:
-            return ("Gemini returned an empty response. Try again — if it keeps "
-                    "happening, set THINKING_BUDGET=0 and MAX_OUTPUT_TOKENS=8192 "
-                    "in llm_interpreter.py.")
+            return "Gemini returned an empty response. Please try again."
         if show_provider:
             text += "\n\n---\n*Generated by Google Gemini · for reflection and "
             text += "self-understanding, not fixed prediction.*"
@@ -247,15 +228,6 @@ def generate_llm_interpretation(structured_chart, focus="general", show_provider
         return f"AI interpretation unavailable: {e}"
     except Exception as e:
         return f"AI interpretation could not be generated ({type(e).__name__}: {e})."
-
-
-# ---------------------------------------------------------------------------
-# 5. Compatibility shim: if your app still calls the old consensus function,
-#    it keeps working by just returning a single Gemini reading.
-# ---------------------------------------------------------------------------
-def generate_consensus_interpretation(structured_chart, focus="general",
-                                      min_agreement="all"):
-    return generate_llm_interpretation(structured_chart, focus)
 
 
 if __name__ == "__main__":

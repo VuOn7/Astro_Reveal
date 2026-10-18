@@ -2,21 +2,17 @@
 """
 feedback_collector.py
 =====================
-Turns each chart factor into a BLIND multiple-choice question and records the
-user's pick, so you can (a) collect labelled data and (b) honestly measure
-whether the predictions carry any signal above random chance.
+The blind test. Each chart factor becomes a multiple-choice question: the
+person's real description is shuffled in with descriptions of OTHER values of
+the same factor, with no labels. The app shows it before revealing the chart,
+so people can't just recognise their own text.
 
-Design that avoids the Barnum effect:
-- For each factor (Sun sign, Ascendant, Moon nakshatra, Day Master, Tzolkin),
-  the user's REAL description is shuffled together with descriptions from OTHER
-  values of the same factor. No labels, so they can't tell which is "theirs".
-- We log which option was correct and which they chose -> a "hit" or "miss".
-- Compare hit-rate to chance (1/n_options). If hit-rate is not clearly above
-  chance, the predictions don't discriminate, and there's nothing to train on.
+Each answer is logged as a hit or a miss. If the hit-rate across many people
+is not clearly above chance (1 / number of options), the descriptions don't
+really discriminate - and the stats will say so.
 
-All trait descriptions below are copied from your existing calculator data
-(sign/nakshatra/tzolkin meanings) or are standard published associations
-(five-element day-master). Nothing here is invented.
+The descriptions are the calculator's own sign / nakshatra / Tzolkin meanings,
+plus the standard five-element Day Master descriptions.
 """
 
 import os
@@ -26,7 +22,7 @@ import random
 import datetime
 from collections import defaultdict
 
-# --- Option pools (sourced from your calculator's own data) -----------------
+# --- Option pools ------------------------------------------------------------
 SIGN_TRAITS = {
     "Aries": "Dynamic, pioneering, leadership-driven, courageous, impulsive, competitive",
     "Taurus": "Stable, practical, determined, artistic, security-focused, stubborn",
@@ -142,11 +138,12 @@ def build_feedback_form(chart, n_options=4):
 
 # --- Record + analyse -------------------------------------------------------
 def record_response(path, chart_id, item, chosen_index, consent=True):
-    """Append one labelled data point as JSON-lines. Only run with consent."""
+    """Append one labelled data point as JSON-lines. Only call with consent."""
     if not consent:
         return
     rec = {
-        "ts": datetime.datetime.utcnow().isoformat(timespec="seconds"),
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "shown_before_chart": True,
         "chart_id": chart_id,
         "factor": item["factor"],
         "chart_value": item["chart_value"],
@@ -164,7 +161,13 @@ def summarize_log(path):
     """Hit-rate vs chance per factor. hit_rate ~ chance_rate => no signal."""
     if not os.path.exists(path):
         return {}
-    rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                continue
     if not rows:
         return {}
     agg = defaultdict(lambda: {"hits": 0, "total": 0, "chance": 0.0})
