@@ -24,27 +24,29 @@ It also does something unusual for an astrology app: it **honestly measures whet
 ## ✨ Features
 
 - **Four traditions, one chart**
-  - 🕉 **Vedic (sidereal)** — Lahiri ayanamsa, planetary positions, Moon nakshatra + pada, Lagna
-  - ♋ **Western (tropical)** — Sun/Moon/rising, planetary placements, multiple house systems
-  - ☯ **Chinese Four Pillars (Bazi)** — Year/Month/Day/Hour pillars and your Day Master
+  - 🕉 **Vedic (sidereal)** — Lahiri ayanamsa, Sun to Neptune plus Rahu/Ketu, Moon nakshatra + pada, Lagna
+  - ♋ **Western (tropical)** — Sun/Moon/rising, Midheaven, planetary placements, house cusps (Placidus, Regiomontanus, Porphyry, Equal, Whole Sign)
+  - ☯ **Chinese Four Pillars (Bazi)** — Year/Month/Day/Hour pillars and your Day Master, with year and month changing on the solar terms
   - 🌞 **Mayan Tzolkin** — day-sign, galactic tone, and kin (GMT 584283 correlation)
 - **🤖 AI-powered readings** — dynamic, chart-specific interpretations via Google Gemini, written to ground every claim in your real data
-- **🗺 Interactive birth-location map** — click anywhere, or pick from major cities / manual coordinates
+- **🗺 Interactive birth-location map** — click anywhere, or pick from major cities / manual coordinates; every timezone, with historical daylight saving handled
 - **📊 Cross-system comparison** — see where the traditions agree and where they tension
-- **📄 Downloadable report** — export a full text analysis
+- **📄 Downloadable report** — export the full chart as text
 - **🔬 Built-in honesty check** — a blind feedback system that tests prediction accuracy (see below)
 
 ## 🔬 The honesty layer (what makes this different)
 
 Astrology readings are famously vulnerable to the [Barnum effect](https://en.wikipedia.org/wiki/Barnum_effect) — vague statements that feel personal but apply to everyone. `feedback_collector.py` is designed to cut straight through that.
 
-For each chart factor (Sun sign, Ascendant, Moon nakshatra, Day Master, Tzolkin sign), the app shows your *real* description shuffled blindly among descriptions for **other** values of that same factor — no labels. You pick the one that fits you best. The app logs whether you picked the "correct" one.
+Right after you calculate, **before your chart is revealed**, the app asks five quick questions. For each chart factor (Sun sign, Ascendant, Moon nakshatra, Day Master, Tzolkin sign) it shows your *real* description shuffled among descriptions for **other** values of that same factor — no labels. You pick the one that fits you best, and (only if you agree) the app logs whether you picked your own. Because you haven't seen your chart yet, you can't just recognise the text. You can also skip it.
 
 Then it compares your hit-rate against pure chance:
 
 > If hit-rate ≈ chance-rate, the predictions don't actually discriminate — and the app says so, instead of pretending otherwise.
 
 It's an astrology tool that's willing to keep score against itself.
+
+To see the running numbers, set `FEEDBACK_ADMIN_PASSWORD` in the app's Secrets; an admin panel then appears at the bottom of the page. (On Streamlit Cloud the log file resets whenever the app restarts.)
 
 ## 🛠 Tech stack
 
@@ -54,13 +56,13 @@ It's an astrology tool that's willing to keep score against itself.
 | Maps | `folium` + `streamlit-folium` |
 | Data | `pandas`, `pytz` |
 | AI readings | Google **Gemini** (`gemini-2.5-flash`) via the standard-library `urllib` — no heavy SDK |
-| Ephemeris | Self-contained planetary series, Lahiri ayanamsa, Bazi & Tzolkin math (pure Python) |
+| Ephemeris | `astro_engine.py`, pure Python: Meeus Sun & Moon, JPL Keplerian elements for the planets, house systems, Lahiri ayanamsa, Bazi & Tzolkin |
 
 ## 🚀 Run it locally
 
 ```bash
 # 1. Clone
-git clone https://github.com/<your-username>/Astro_Reveal.git
+git clone https://github.com/VuOn7/Astro_Reveal.git
 cd Astro_Reveal
 
 # 2. Install dependencies
@@ -86,7 +88,8 @@ The app opens at `http://localhost:8501`.
 
 ```
 Astro_Reveal/
-├── astro_calculator.py     # Main Streamlit app: chart math, UI, theme
+├── astro_calculator.py     # Streamlit app: UI, report, theme
+├── astro_engine.py         # All the chart maths (python3 astro_engine.py runs its self-checks)
 ├── llm_interpreter.py      # Gemini reading generator (chart → personalised text)
 ├── feedback_collector.py   # Blind MCQ accuracy test (the honesty layer)
 ├── requirements.txt        # Dependencies
@@ -96,7 +99,9 @@ Astro_Reveal/
 
 ## ⚠️ Notes & disclaimer
 
-- The planetary calculations use **simplified analytic series** — accurate enough for an exploratory, reflective tool, but not observatory-grade ephemeris precision. Treat exact degrees as approximate.
+- Positions come from published low-precision methods (Meeus for the Sun and Moon, JPL's approximate Keplerian elements for the planets). They're typically within 0.01–0.2° and are checked against known events (equinoxes, the 2020 Jupiter–Saturn conjunction, transits of Venus and Mercury, Mars' 2003 opposition). That's plenty for astrology, but it isn't an observatory ephemeris.
+- Supported birth dates: 1800–2050 (the range the planet elements are fitted for).
+- Placidus houses can't be drawn inside the polar circles; there the app falls back to Porphyry and says so.
 - Astrology describes **tendencies and themes, not fixed fate.** Use Astro_Reveal for self-reflection and curiosity — not as a basis for major life decisions.
 
 ## 📜 License

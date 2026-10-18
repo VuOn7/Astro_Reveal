@@ -1,1 +1,18 @@
+# Secrets - never commit these
+.env
 .streamlit/
+*.key
+
+# Collected user data and local logs
+feedback_log.jsonl
+*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
