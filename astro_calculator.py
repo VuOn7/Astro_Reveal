@@ -109,6 +109,13 @@ APP_CSS = f"""
 iframe[title="streamlit_folium.st_folium"] {{ border-radius: 1.4rem; }}
 .ar-footer {{ color: {ac.MUTED}; font-size: .88rem; margin-top: 4rem; border-top: 1px solid {ac.LINE};
   padding-top: 1rem; }}
+/* Preserve the existing visual design while making keyboard focus easier to see. */
+.st-key-game button:focus-visible, .st-key-cta button:focus-visible {{ outline: 3px solid {ac.VIOLET}; outline-offset: 3px; }}
+/* Respect OS-level reduced-motion settings without changing normal interactions. */
+@media (prefers-reduced-motion: reduce) {{
+  .st-key-game button, .st-key-cta button {{ transition: none !important; }}
+  .st-key-game button:hover {{ transform: none !important; }}
+}}
 @media (max-width: 900px) {{ .ar-summary {{ text-align: left; }} }}
 </style>
 """
