@@ -1,4 +1,4 @@
-# Astro Reveal theme: lapis enamel, brass and verdigris, like an old astrolabe.
+# Astro Reveal theme: a light star atlas, coloured by the four elements.
 # Colours here must match the palette at the top of astro_charts.py.
 
 [server]
@@ -8,30 +8,29 @@ enableStaticServing = true
 toolbarMode = "minimal"
 
 [theme]
-base = "dark"
-primaryColor = "#D4A94F"
-backgroundColor = "#0F1B36"
-secondaryBackgroundColor = "#17264A"
-textColor = "#ECE5D2"
-linkColor = "#62B8A6"
-borderColor = "#56699C"
+base = "light"
+primaryColor = "#5B47E0"
+backgroundColor = "#F6F4FF"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#221E52"
+linkColor = "#5B47E0"
+borderColor = "#8C86BA"
 showWidgetBorder = true
 showSidebarBorder = false
-baseRadius = "0.6rem"
-buttonRadius = "0.6rem"
+baseRadius = "0.9rem"
+buttonRadius = "full"
+baseFontSize = 18
 font = "instrument, sans-serif"
-headingFont = "imfell, Georgia, serif"
-headingFontWeights = [400, 400, 400, 400, 400, 400]
-headingFontSizes = ["2.6rem", "2rem", "1.55rem", "1.3rem", "1.1rem", "1rem"]
-baseFontSize = 16
-codeBackgroundColor = "#17264A"
-dataframeBorderColor = "#2C3D66"
-dataframeHeaderBackgroundColor = "#17264A"
-dataframeHeaderTextColor = "#9AA5C0"
-greenColor = "#62B8A6"
-yellowColor = "#D4A94F"
-blueColor = "#73A6E6"
-redColor = "#E8735F"
+headingFont = "fraunces, Georgia, serif"
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+headingFontSizes = ["3rem", "2.1rem", "1.6rem", "1.3rem", "1.1rem", "1rem"]
+dataframeBorderColor = "#E2DEF5"
+dataframeHeaderBackgroundColor = "#F6F4FF"
+greenColor = "#3FA06B"
+yellowColor = "#F4B63F"
+blueColor = "#3B82F6"
+redColor = "#F26B4F"
+violetColor = "#5B47E0"
 
 [[theme.fontFaces]]
 family = "instrument"
@@ -40,9 +39,9 @@ weight = "400 700"
 style = "normal"
 
 [[theme.fontFaces]]
-family = "imfell"
-url = "app/static/fonts/imfell-english.ttf"
-weight = 400
+family = "fraunces"
+url = "app/static/fonts/fraunces.ttf"
+weight = "100 900"
 style = "normal"
 
 [[theme.fontFaces]]

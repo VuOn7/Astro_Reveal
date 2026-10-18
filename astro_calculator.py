@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Astro_Reveal - one birth chart, four traditions
+Astro_Reveal - your sky, the moment you arrived
 ===============================================
-Streamlit app: Western (tropical), Vedic (sidereal), Chinese Four Pillars and
-Maya Tzolkin from one birth date, time and place.
+Streamlit app: Western, Vedic, Chinese and Maya astrology from one birth date,
+time and place, made to be tapped and played with rather than read.
 
-- astro_engine.py   the chart maths (run it for its self-checks)
-- astro_charts.py   the wheel, rasi chart, pillars and Tzolkin drawings
-- places.py         offline birthplace search and timezone lookup
-- this file         the page itself
+- astro_engine.py    the chart maths (run it for its self-checks)
+- astro_charts.py    every drawing: cards, wheel, sky map, explorer, score ring
+- astro_content.py   the words, symbols and the compatibility game
+- places.py          offline birthplace search and timezone lookup
+- sky_data.py        stars and constellation figures (d3-celestial, BSD)
+- this file          the pages
 
 The look (colours, fonts, corners) lives in .streamlit/config.toml.
 Run:  streamlit run astro_calculator.py
@@ -16,14 +18,15 @@ Run:  streamlit run astro_calculator.py
 
 import hmac
 import os
+from datetime import date, datetime, time, timedelta, timezone
 from html import escape
-from datetime import date, datetime, time
 
 import pandas as pd
 import pytz
 import streamlit as st
 
 import astro_charts as ac
+import astro_content as C
 import astro_engine as ae
 import places
 from feedback_collector import (ELEMENT_TRAITS, build_feedback_form, chart_id_for,
@@ -46,50 +49,81 @@ except ImportError:
 FEEDBACK_LOG = "feedback_log.jsonl"
 DEFAULT_PLACE = {"label": "Kathmandu, Nepal", "lat": 27.7017, "lon": 85.3206,
                  "tz": "Asia/Kathmandu", "tz_from": "Kathmandu"}
+TILE_SHAPES = ["✦", "☾", "✺", "❖"]
 
-st.set_page_config(page_title="Astro Reveal", page_icon="✦", layout="wide",
+st.set_page_config(page_title="Astro Reveal", page_icon="✨", layout="wide",
                    initial_sidebar_state="collapsed")
 
 
 # ===========================================================================
-#  STYLE: everything else comes from the theme in .streamlit/config.toml
+#  STYLE: colours and fonts come from .streamlit/config.toml; this adds the
+#  card shapes and sizes Streamlit can't express on its own
 # ===========================================================================
 APP_CSS = f"""
 <style>
 [data-testid="stMainBlockContainer"], .block-container {{
-  max-width: 1160px; padding-top: 2.2rem; padding-bottom: 4rem; }}
+  max-width: 1360px; padding-top: 1.6rem; padding-bottom: 5rem; }}
 [data-testid="stHeader"] {{ background: transparent; }}
-[data-testid="stBaseButton-primary"], button[kind="primary"] {{ color: {ac.LAPIS} !important; }}
-[data-testid="stBaseButton-primary"] p, button[kind="primary"] p {{ color: {ac.LAPIS} !important; font-weight: 600; }}
-iframe[title="streamlit_folium.st_folium"] {{ border-radius: .6rem; border: 1px solid {ac.RULE}; }}
-.ar-wordmark {{ font-family: {ac.SERIF_FONT}; font-size: 1.55rem; color: {ac.IVORY};
-  display: flex; align-items: center; gap: .55rem; margin-bottom: 1.6rem; }}
-.ar-wordmark span {{ color: {ac.BRASS}; font-size: 1.1rem; }}
-.ar-lede {{ color: {ac.MUTED}; font-size: 1.08rem; max-width: 34rem; margin: -.4rem 0 1.4rem; }}
-.ar-place {{ border-left: 2px solid {ac.BRASS}; padding: .35rem 0 .35rem .9rem; margin: .4rem 0 1rem;
-  color: {ac.IVORY}; line-height: 1.5; }}
-.ar-place small {{ color: {ac.MUTED}; font-size: .9rem; display: block; }}
-.ar-summary {{ color: {ac.MUTED}; font-size: 1.02rem; margin: .3rem 0 1rem; }}
-.ar-summary b {{ color: {ac.IVORY}; font-weight: 500; }}
-.ar-facts {{ margin-top: 1.8rem; border-top: 1px solid {ac.RULE}; padding-top: 1.1rem; }}
-.ar-facts div {{ display: grid; grid-template-columns: 9.5rem 1fr; gap: .8rem; padding: .3rem 0; }}
-.ar-facts dt {{ color: {ac.MUTED}; }}
-.ar-facts dd {{ margin: 0; color: {ac.IVORY}; }}
-.ar-maya {{ display: flex; gap: 1.4rem; align-items: center; margin: .5rem 0 1rem; }}
-.ar-maya-name {{ font-family: {ac.SERIF_FONT}; font-size: 2.1rem; color: {ac.IVORY}; line-height: 1.1; }}
-.ar-maya-sub {{ color: {ac.MUTED}; }}
-.ar-footer {{ color: {ac.MUTED}; font-size: .85rem; margin-top: 3rem; border-top: 1px solid {ac.RULE};
+.ar-wordmark {{ font-family: {ac.SERIF_FONT}; font-weight: 600; font-size: 1.5rem; color: {ac.INK};
+  display: flex; align-items: center; gap: .5rem; }}
+.ar-hero-title {{ font-family: {ac.SERIF_FONT}; font-weight: 650; font-size: clamp(2.6rem, 5.2vw, 4.6rem);
+  line-height: 1.02; letter-spacing: -.025em; color: {ac.INK}; margin: 1.4rem 0 .6rem; }}
+.ar-hero-sub {{ font-size: 1.25rem; color: {ac.MUTED}; margin: 0 0 1.8rem; }}
+.ar-section {{ font-family: {ac.SERIF_FONT}; font-weight: 600; font-size: 2.1rem; color: {ac.INK};
+  margin: 3rem 0 1rem; letter-spacing: -.01em; }}
+.ar-section small {{ display: block; font-family: {ac.TEXT_FONT}; font-weight: 400; font-size: 1.05rem;
+  color: {ac.MUTED}; margin-top: .3rem; letter-spacing: 0; }}
+[class*="st-key-card_"], [class*="st-key-panel_"] {{ background: {ac.CARD}; border-radius: 1.6rem;
+  padding: 1.3rem 1.4rem 1.4rem; box-shadow: 0 12px 32px -20px rgba(34,30,82,.35); }}
+[class*="st-key-card_"] {{ min-height: 13rem; }}
+.ar-mini-art {{ display: flex; justify-content: center; margin-top: .4rem; }}
+.ar-mini-art svg {{ width: 100%; max-width: 260px; height: auto; }}
+.ar-card-title {{ font-family: {ac.SERIF_FONT}; font-weight: 600; font-size: 1.55rem; color: {ac.INK};
+  display: flex; align-items: center; gap: .6rem; margin-bottom: .2rem; }}
+.ar-card-title span {{ font-size: 2rem; }}
+.ar-pill {{ display: inline-flex; align-items: center; gap: .45rem; border-radius: 999px;
+  padding: .45rem 1rem; font-weight: 600; font-size: 1.05rem; }}
+.ar-hint {{ color: {ac.MUTED}; font-size: .98rem; margin: .2rem 0 0; }}
+.st-key-cta button {{ min-height: 4.2rem; border-radius: 999px; }}
+.st-key-cta button p {{ font-size: 1.3rem; font-weight: 650; }}
+.st-key-game button {{ min-height: 9.5rem; border-radius: 1.6rem; background: {ac.CARD};
+  border: 2px solid {ac.LINE}; box-shadow: 0 10px 28px -20px rgba(34,30,82,.4);
+  transition: transform .15s ease, border-color .15s ease; }}
+.st-key-game button:hover {{ transform: translateY(-3px); border-color: {ac.VIOLET}; color: {ac.INK}; }}
+.st-key-game button p {{ font-size: 1.5rem; line-height: 1.35; font-weight: 600; }}
+.ar-pips {{ display: flex; gap: .5rem; margin: .4rem 0 1.4rem; }}
+.ar-pips i {{ width: 2.6rem; height: .55rem; border-radius: 999px; background: {ac.LINE}; }}
+.ar-pips i.on {{ background: {ac.VIOLET}; }}
+.ar-summary {{ font-size: 1.05rem; color: {ac.MUTED}; text-align: right; margin-top: .4rem; }}
+.ar-summary b {{ color: {ac.INK}; }}
+.ar-cap {{ color: {ac.MUTED}; text-align: center; font-size: 1rem; margin: .6rem 0 0; }}
+.ar-big-line {{ font-family: {ac.SERIF_FONT}; font-weight: 600; font-size: 2rem; line-height: 1.15;
+  color: {ac.INK}; margin: .2rem 0 .6rem; }}
+.ar-note-list {{ display: flex; flex-direction: column; gap: .7rem; margin-top: .4rem; }}
+.ar-note {{ display: flex; gap: .8rem; align-items: center; background: {ac.PAPER}; border-radius: 1.1rem;
+  padding: .8rem 1rem; font-size: 1.08rem; color: {ac.INK}; }}
+.ar-note b {{ font-size: 1.6rem; line-height: 1; min-width: 2.4rem; text-align: center; }}
+.ar-moon {{ font-size: 6rem; line-height: 1; text-align: center; }}
+.ar-ticket {{ font-size: 1.12rem; color: {ac.INK}; line-height: 1.7; margin: .3rem 0 1rem; }}
+.ar-ticket span {{ color: {ac.MUTED}; }}
+iframe[title="streamlit_folium.st_folium"] {{ border-radius: 1.4rem; }}
+.ar-footer {{ color: {ac.MUTED}; font-size: .88rem; margin-top: 4rem; border-top: 1px solid {ac.LINE};
   padding-top: 1rem; }}
+@media (max-width: 900px) {{ .ar-summary {{ text-align: left; }} }}
 </style>
 """
 
 
 def inject_css():
-    st.markdown(ac.STYLE + APP_CSS, unsafe_allow_html=True)
+    st.html(ac.STYLE + APP_CSS)
 
 
 def html(markup):
-    st.markdown(markup, unsafe_allow_html=True)
+    st.html(markup)
+
+
+def section(title, sub=None):
+    html(f'<div class="ar-section">{title}{f"<small>{sub}</small>" if sub else ""}</div>')
 
 
 # ===========================================================================
@@ -313,7 +347,7 @@ def generate_report_text(r):
 
 
 # ===========================================================================
-#  BIRTH DETAILS
+#  STEP 1: BIRTH DETAILS
 # ===========================================================================
 FORM_KEYS = ("bd", "bt", "bt_unknown", "place_query", "house_system")
 
@@ -324,7 +358,7 @@ def init_state():
     s.setdefault("map_origin", [s.place["lat"], s.place["lon"]])
     s.setdefault("map_center", list(s.map_origin))
     s.setdefault("map_zoom", 6)
-    s.setdefault("form_memory", {"bd": date(2000, 1, 1), "bt": time(12, 0), "bt_unknown": False,
+    s.setdefault("form_memory", {"bd": None, "bt": time(12, 0), "bt_unknown": False,
                                  "place_query": "", "house_system": "Placidus"})
     # widgets forget their values while hidden; bring them back from memory
     for k in FORM_KEYS:
@@ -332,36 +366,72 @@ def init_state():
             s[k] = s.form_memory[k]
 
 
-def place_search():
+def sun_sign_on(d):
+    """Sun sign for a date (at midday UTC; close enough for a preview)."""
+    return C.sign(ae.sun_longitude(ae.julian_day(d.year, d.month, d.day, 12)))
+
+
+def pill(text, colours):
+    _, base, tint, ink = colours
+    return f'<span class="ar-pill" style="background:{tint};color:{ink}">{text}</span>'
+
+
+def date_card():
+    with st.container(key="card_date"):
+        html('<div class="ar-card-title"><span>🎂</span>Birthday</div>')
+        d = st.date_input("Birthday", key="bd", min_value=ae.MIN_DATE, max_value=ae.MAX_DATE,
+                          label_visibility="collapsed", format="DD/MM/YYYY")
+        if d:
+            name, element, _, emoji, _, _ = sun_sign_on(d)
+            html(pill(f"☀️ That makes you a {name} {emoji}", C.ELEMENTS[element]))
+            html(f'<div class="ar-mini-art">{ac.constellation_svg(C.SIGN_NAMES.index(name), 280, 110)}</div>')
+        else:
+            html('<p class="ar-hint">Pick the day you were born.</p>')
+
+
+def time_card():
+    s = st.session_state
+    with st.container(key="card_time"):
+        html('<div class="ar-card-title"><span>⏰</span>Time</div>')
+        unknown = s.get("bt_unknown", False)
+        st.time_input("Time of birth", key="bt", step=60, disabled=unknown,
+                      label_visibility="collapsed")
+        st.toggle("I don't know the time", key="bt_unknown")
+        html('<p class="ar-hint">' + ("No problem. We'll use midday and skip your Rising sign."
+                                      if unknown else "Even roughly helps: it sets your Rising sign.")
+             + '</p>')
+
+
+def place_card():
     s = st.session_state
     ix = place_index()
-    query = st.text_input("Place of birth", key="place_query",
-                          placeholder="Town or city, for example Pokhara or Portland, Maine")
-    if ix is None:
-        st.caption("Place search isn't available here. Click the map, or enter "
-                   "coordinates under Chart settings.")
-        return
-    if not query.strip():
-        return
-    results = ix.search(query)
-    if not results:
-        st.caption("No town by that name in the list. Try the nearest larger town, "
-                   "then click the map to move the pin.")
-        return
-    labels = [p.label for p in results]
-    dupes = {lab for lab in labels if labels.count(lab) > 1}
-    pick = st.selectbox(
-        "Matches", range(len(results)), key="place_pick_" + places.fold(query),
-        format_func=lambda i: labels[i] + (f" ({fmt_place(results[i].lat, results[i].lon)})"
-                                           if labels[i] in dupes else ""),
-        label_visibility="collapsed")
-    chosen = results[pick]
-    # only act when the search or the choice changes, so a later click on the
-    # map isn't undone by the same search result on the next run
-    pick_id = (places.fold(query), chosen.gid)
-    if s.get("applied_pick") != pick_id:
-        s.applied_pick = pick_id
-        set_place(place_from(chosen), recentre=True, zoom=10)
+    with st.container(key="card_place"):
+        html('<div class="ar-card-title"><span>📍</span>Birthplace</div>')
+        query = st.text_input("Birthplace", key="place_query", label_visibility="collapsed",
+                              placeholder="Type a town, e.g. Pokhara")
+        if ix is None:
+            html('<p class="ar-hint">Place search isn\'t available. Tap the map instead.</p>')
+        elif query.strip():
+            results = ix.search(query)
+            if results:
+                labels = [p.label for p in results]
+                dupes = {lab for lab in labels if labels.count(lab) > 1}
+                pick = st.selectbox(
+                    "Matches", range(len(results)), key="place_pick_" + places.fold(query),
+                    format_func=lambda i: labels[i] + (f" ({fmt_place(results[i].lat, results[i].lon)})"
+                                                       if labels[i] in dupes else ""),
+                    label_visibility="collapsed")
+                chosen = results[pick]
+                # only act when the search or the choice changes, so a later tap on
+                # the map isn't undone by the same search result on the next run
+                pick_id = (places.fold(query), chosen.gid)
+                if s.get("applied_pick") != pick_id:
+                    s.applied_pick = pick_id
+                    set_place(place_from(chosen), recentre=True, zoom=10)
+            else:
+                html('<p class="ar-hint">Not in the list. Try a nearby bigger town, then tap the map.</p>')
+        p = s.place
+        html(f'<p class="ar-hint">📌 {escape(p["label"])}<br>Timezone {escape(chosen_timezone())}</p>')
 
 
 def birth_map():
@@ -370,14 +440,17 @@ def birth_map():
         st.info("The map needs the folium and streamlit-folium packages.")
         return
     pin = folium.FeatureGroup(name="Birthplace")
-    folium.CircleMarker([s.place["lat"], s.place["lon"]], radius=9, color=ac.IVORY, weight=2,
-                        fill=True, fill_color=ac.BRASS, fill_opacity=1,
+    folium.CircleMarker([s.place["lat"], s.place["lon"]], radius=11, color=ac.CARD, weight=3,
+                        fill=True, fill_color=ac.VIOLET, fill_opacity=1,
                         tooltip=s.place["label"]).add_to(pin)
-    base = folium.Map(location=s.map_origin, zoom_start=6, tiles="CartoDB dark_matter",
+    base = folium.Map(location=s.map_origin, zoom_start=6, tiles="OpenStreetMap",
                       control_scale=True)
+    base.get_root().header.add_child(folium.Element(
+        "<style>.leaflet-tile-pane{filter:saturate(.5) brightness(1.04) hue-rotate(-10deg)}"
+        f".leaflet-container{{background:{ac.PAPER};cursor:crosshair}}</style>"))
     out = st_folium(base, key="birth_map", center=s.map_center, zoom=s.map_zoom,
                     feature_group_to_add=pin, returned_objects=["last_clicked"],
-                    height=430, use_container_width=True)
+                    height=360, use_container_width=True)
     click = (out or {}).get("last_clicked")
     if click:
         point = (round(click["lat"], 4), round((click["lng"] + 180) % 360 - 180, 4))
@@ -385,22 +458,17 @@ def birth_map():
             s.last_click = point
             set_place(place_from_point(*point))
             st.rerun()
-    st.caption("Click the map to move the pin to the exact spot.")
 
 
 def chart_settings():
     s = st.session_state
-    with st.expander("Chart settings"):
+    with st.expander("More options"):
         st.selectbox("House system", ae.HOUSE_SYSTEMS, key="house_system",
-                     help="Placidus is the most widely used. Whole Sign is the "
-                          "traditional choice in Vedic astrology.")
+                     help="Placidus is the most widely used. Whole Sign is traditional in Vedic astrology.")
         zones = pytz.common_timezones
         detected = s.place.get("tz") or "UTC"
         st.selectbox("Timezone", zones, index=zones.index(detected) if detected in zones else 0,
-                     key="tz_" + detected,
-                     help="Set automatically from the birthplace. Daylight saving and "
-                          "historical changes are handled for you.")
-        st.write("Or enter coordinates")
+                     key="tz_" + detected, help="Set from the birthplace, daylight saving included.")
         c1, c2 = st.columns(2)
         lat = c1.number_input("Latitude", -90.0, 90.0, float(s.place["lat"]), 0.0001,
                               format="%.4f", key="lat_input")
@@ -419,36 +487,36 @@ def chosen_timezone():
 
 def birth_form():
     s = st.session_state
-    left, right = st.columns([1, 1.05], gap="large")
+    html('<div class="ar-hero-title">Your sky, the moment you arrived.</div>'
+         '<p class="ar-hero-sub">Three quick answers, then a little game, then your chart.</p>')
+    c1, c2, c3 = st.columns(3, gap="medium")
+    with c1:
+        date_card()
+    with c2:
+        time_card()
+    with c3:
+        place_card()
+    st.write("")
+    left, right = st.columns([1.7, 1], gap="large")
     with left:
-        st.title("When and where were you born?")
-        html('<p class="ar-lede">Your chart is the sky at the moment you were born, '
-             'seen from where you were born. The more exact the time, the more of it we can draw.</p>')
-        unknown = s.get("bt_unknown", False)
-        c1, c2 = st.columns(2)
-        c1.date_input("Date of birth", key="bd", min_value=ae.MIN_DATE, max_value=ae.MAX_DATE)
-        c2.time_input("Time of birth", key="bt", step=60, disabled=unknown)
-        st.checkbox("I don't know my birth time", key="bt_unknown",
-                    help="We'll use midday. Your Rising sign, houses and hour pillar "
-                         "need a time, so they'll be left out.")
-        place_search()
-        p = s.place
-        tz = chosen_timezone()
-        source = f" (from {p['tz_from']})" if p.get("tz_from") and tz == p.get("tz") else ""
-        html(f'<div class="ar-place">{escape(p["label"])}<small>{fmt_place(p["lat"], p["lon"])}. '
-             f'Timezone {escape(tz)}{escape(source)}.</small></div>')
-        chart_settings()
-        if s.get("editing") and s.get("calculation_results"):
-            b1, b2 = st.columns(2)
-            if b1.button("Reveal my chart", type="primary", width="stretch"):
-                reveal()
-            if b2.button("Back to my chart", width="stretch"):
-                s.editing = False
-                st.rerun()
-        elif st.button("Reveal my chart", type="primary", width="stretch"):
-            reveal()
-    with right:
         birth_map()
+        st.caption("Tap the map to put the pin exactly where you were born.")
+    with right:
+        with st.container(key="panel_ticket"):
+            html('<div class="ar-card-title"><span>🎟️</span>Ready?</div>')
+            when = (long_date(s.bd) if s.bd else "Birthday not set") + (
+                "" if s.bt_unknown else f", {s.bt.strftime('%H:%M')}")
+            html(f'<div class="ar-ticket">{escape(when)}<br><span>{escape(s.place["label"])}</span></div>')
+            with st.container(key="cta"):
+                go = st.button("Show me my sky ✨", type="primary", width="stretch",
+                               disabled=s.bd is None)
+            if s.get("editing") and s.get("calculation_results"):
+                if st.button("Back to my chart", width="stretch"):
+                    s.editing = False
+                    st.rerun()
+            chart_settings()
+    if go:
+        reveal()
 
 
 def reveal():
@@ -464,182 +532,278 @@ def reveal():
     s.calculation_results = r
     s.editing = False
     for key in list(s.keys()):
-        if key.startswith("fb_") or key in ("ai_reading", "quiz_saved"):
+        if key.startswith(("fb_", "game_", "match_", "explore_")) or key in ("ai_reading",):
             del s[key]
-    s.quiz_done = False
+    s.game = {"round": 0, "answers": {}, "done": False}
     st.rerun()
 
 
-def birth_summary(r):
-    when = long_date(r["date_obj"])
-    when += f" at {r['birth_data']['time']}" if r["time_known"] else ", time unknown"
-    c1, c2 = st.columns([4, 1])
-    c1.markdown(f'<p class="ar-summary">Born <b>{when}</b> in <b>{escape(r["place_label"])}</b> '
-                f'({escape(r["birth_data"]["timezone"])}).</p>', unsafe_allow_html=True)
-    if c2.button("Change birth details", width="stretch"):
+# ===========================================================================
+#  STEP 2: THE GAME (a blind test, played as taps)
+# ===========================================================================
+def game_rounds(chart):
+    # people usually know their Sun sign already, so it can't be tested blind
+    form = [q for q in build_feedback_form(chart, n_options=4) if q["factor"] != "Sun sign"]
+    for q in form:
+        q["short"] = [", ".join(opt.split(", ")[:3]) for opt in q["options"]]
+    return form
+
+
+def render_game(chart):
+    s = st.session_state
+    g = s.game
+    rounds = game_rounds(chart)
+    total = len(rounds)
+    if g["round"] < total:
+        q = rounds[g["round"]]
+        html('<div class="ar-hero-title">Which one feels like you?</div>'
+             f'<p class="ar-hero-sub">Round {g["round"] + 1} of {total}. Go with your gut.</p>'
+             '<div class="ar-pips">' + "".join(f'<i class="{"on" if i <= g["round"] else ""}"></i>'
+                                               for i in range(total)) + '</div>')
+        tints = [C.ELEMENTS[e][2] for e in ("Fire", "Air", "Water", "Earth")]
+        html("<style>" + "".join(f".st-key-game_{g['round']}_{k} button{{background:{tints[k]}}}"
+                                 for k in range(4)) + "</style>")
+        with st.container(key="game"):
+            for row in (0, 2):
+                cols = st.columns(2, gap="medium")
+                for k in (row, row + 1):
+                    if k < len(q["short"]) and cols[k - row].button(
+                            f"{TILE_SHAPES[k]}  {q['short'][k]}", key=f"game_{g['round']}_{k}",
+                            width="stretch"):
+                        g["answers"][g["round"]] = k
+                        g["round"] += 1
+                        st.rerun()
+        st.write("")
+        if st.button("Skip the game", key="game_skip"):
+            g["done"] = True
+            st.rerun()
+        return
+
+    html('<div class="ar-hero-title">Nice. One last tap.</div>'
+         '<p class="ar-hero-sub">Can we keep your answers to test whether astrology beats guessing? '
+         'No birth details are saved.</p>')
+    c1, c2, _ = st.columns([1, 1, 1.4], gap="medium")
+    with c1.container(key="cta"):
+        share = st.button("Yes, use my answers", type="primary", width="stretch", key="game_yes")
+    keep_private = c2.button("No thanks", width="stretch", key="game_no")
+    if share:
+        cid = chart_id_for(chart)
+        for i, choice in g["answers"].items():
+            record_response(FEEDBACK_LOG, cid, rounds[i], choice)
+        s.toast_msg = f"Thanks! Saved {len(g['answers'])} answers."
+    if share or keep_private:
+        g["done"] = True
+        st.rerun()
+
+
+# ===========================================================================
+#  STEP 3: THE REVEAL
+# ===========================================================================
+def headline(r):
+    trop = r["tropical_positions"]
+    parts = [f"{C.sign(trop['Sun'])[0]} Sun", f"{C.sign(trop['Moon'])[0]} Moon"]
+    if r["time_known"]:
+        parts.append(f"{C.sign(r['ascendant'])[0]} rising")
+        return f"{parts[0]}, {parts[1]},<br>{parts[2]}."
+    return f"{parts[0]},<br>{parts[1]}."
+
+
+def top_bar(r):
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        when = long_date(r["date_obj"]) + (f", {r['birth_data']['time']}" if r["time_known"] else "")
+        html(f'<p class="ar-summary" style="text-align:left">Born <b>{escape(when)}</b> in '
+             f'<b>{escape(r["place_label"])}</b></p>')
+    if c2.button("✏️ Change details", width="stretch"):
         st.session_state.editing = True
         st.rerun()
 
 
-# ===========================================================================
-#  BLIND TEST
-# ===========================================================================
-def render_quiz(chart):
-    st.title("Before you see your chart")
-    html('<p class="ar-lede">Each question has one description from your chart and three '
-         'from other charts, with no labels. Pick the one that sounds most like you. Across '
-         'many people this shows whether the descriptions beat guessing, which would be 25%. '
-         'It takes a minute, and you can skip it.</p>')
-    form = build_feedback_form(chart, n_options=4)
-    answers = {}
-    for i, q in enumerate(form):
-        with st.container(border=True):
-            answers[i] = st.radio(
-                f"Question {i + 1} of {len(form)}: which fits you best?",
-                options=list(range(len(q["options"]))),
-                format_func=lambda x, q=q: q["options"][x],
-                index=None, key=f"fb_{i}")
-    consent = st.checkbox("Save my answers anonymously. No birth details are stored.",
-                          key="fb_consent")
-    c1, c2, _ = st.columns([1.3, 1.3, 2])
-    if c1.button("Save answers and show my chart", type="primary", key="fb_submit",
-                 width="stretch"):
-        if not consent:
-            st.warning("Tick the box to save your answers, or choose Skip.")
-            return
-        cid = chart_id_for(chart)
-        saved = 0
-        for i, q in enumerate(form):
-            if answers.get(i) is not None:
-                record_response(FEEDBACK_LOG, cid, q, answers[i])
-                saved += 1
-        st.session_state.quiz_done = True
-        st.session_state.quiz_saved = saved
-        st.rerun()
-    if c2.button("Skip and show my chart", key="fb_skip", width="stretch"):
-        st.session_state.quiz_done = True
-        st.rerun()
-
-
-# ===========================================================================
-#  RESULTS
-# ===========================================================================
 def render_results(r):
-    s = st.session_state
-    if s.get("quiz_saved"):
-        st.toast(f"Saved {s.quiz_saved} answers. Thank you.")
-        s.quiz_saved = 0
-    trop, nak, fp, tz = r["tropical_positions"], r["nakshatra"], r["four_pillars"], r["tzolkin"]
+    trop = r["tropical_positions"]
+    msg = st.session_state.pop("toast_msg", None)
+    if msg:
+        st.toast(msg, icon="💜")
+    top_bar(r)
+    html(f'<div class="ar-hero-title">{headline(r)}</div>'
+         '<p class="ar-hero-sub">Tap any card to turn it over.</p>')
+    html(ac.big_three_cards(trop, r["ascendant"], r["houses"]))
 
-    left, right = st.columns([1.3, 1], gap="large")
-    with left:
+    section("Your chart and your sky", "Hover a planet on the wheel. The map shows what was overhead.")
+    c1, c2 = st.columns(2, gap="medium")
+    with c1.container(key="panel_wheel"):
         html(ac.natal_wheel_svg(trop, r["houses"], r["ascendant"], r["mc"], r["retrograde"],
                                 title=f"Birth chart for {long_date(r['date_obj'])}"))
+    with c2.container(key="panel_sky"):
+        sky, day = ac.sky_map_svg(r["jd"], r["birth_data"]["lat"], r["birth_data"]["lon"], trop)
+        html(sky)
+        html(f'<p class="ar-cap">{"☀️ It was daytime, so these stars were hidden by the light." if day else "🌌 It was night: this is the sky you arrived under."}'
+             f'{"" if r["time_known"] else " Shown for midday."}</p>')
+
+    section("Around the world", "The same moment, read by three other traditions.")
+    html(ac.world_cards(r["four_pillars"], r["nakshatra"], r["tzolkin"], long_date(r["date_obj"])))
+
+    section("Play", "Compare with someone, try other birth times, or check today's sky.")
+    play(r)
+
+    section("A reading, written for you")
+    render_ai(chart_summary(r))
+    details(r)
+
+
+@st.fragment
+def play(r):
+    modes = ["💞 Match with someone", "⏳ Birth-time explorer", "🌙 Today's sky"]
+    mode = st.segmented_control("Play", modes, default=modes[0], key="play_mode",
+                                label_visibility="collapsed") or modes[0]
+    with st.container(key="panel_play"):
+        if mode == modes[0]:
+            match_panel(r)
+        elif mode == modes[1]:
+            explorer_panel(r)
+        else:
+            today_panel(r)
+
+
+def match_panel(r):
+    left, right = st.columns([1, 1.5], gap="large")
+    with left:
+        html('<div class="ar-big-line">Who are you curious about?</div>')
+        name = st.text_input("Their name", key="match_name", placeholder="Their name (optional)")
+        their_day = st.date_input("Their birthday", value=None, key="match_date",
+                                  min_value=ae.MIN_DATE, max_value=ae.MAX_DATE, format="DD/MM/YYYY")
+        html('<p class="ar-hint">Just for fun. A birthday is enough.</p>')
     with right:
-        st.title("Your chart")
-        html(ac.big_three_html(trop, r["ascendant"], r["houses"]))
-        dm = fp["day"][0]
-        html(f'<dl class="ar-facts">'
-             f'<div><dt>Moon nakshatra</dt><dd>{nak["name"]}, pada {nak["pada"]}</dd></div>'
-             f'<div><dt>Day Master</dt><dd>{dm[0]}, {dm[1]}</dd></div>'
-             f'<div><dt>Maya day sign</dt><dd>{tz["galactic_tone"]} {tz["day_sign"]}</dd></div>'
-             f'</dl>')
+        if not their_day:
+            html('<div class="ar-moon">💞</div><p class="ar-cap">Add a birthday to see how you two fit.</p>')
+            return
+        jd = ae.julian_day(their_day.year, their_day.month, their_day.day, 12)
+        them = ae.planetary_positions(jd)
+        their_animal = ae.four_pillars(datetime.combine(their_day, time(12, 0)), jd)["year"][1][1]
+        my_animal = r["four_pillars"]["year"][1][1]
+        score, verdict, notes = C.compatibility(r["tropical_positions"], them, my_animal, their_animal)
+        who = escape(name.strip()) if name.strip() else "them"
+        ring, text = st.columns([1, 1.6])
+        with ring:
+            html(ac.score_ring_svg(score))
+        with text:
+            html(f'<div class="ar-big-line">{verdict}</div>'
+                 f'<p class="ar-hint">You and {who}: {C.sign(them["Sun"])[0]} {C.sign(them["Sun"])[3]}, '
+                 f'{their_animal} {C.CHINESE_ANIMALS[their_animal][0]}</p>')
+        html('<div class="ar-note-list">' + "".join(
+            f'<div class="ar-note"><b>{icon}</b>{escape(line)}</div>' for icon, line in notes) + '</div>')
 
-    tabs = st.tabs(["Western", "Vedic", "Chinese", "Maya", "Side by side"])
 
-    with tabs[0]:
-        c1, c2 = st.columns([1.2, 1], gap="large")
-        with c1:
-            st.subheader("Planets")
-            st.dataframe(positions_table(trop, r["houses"], r["retrograde"]),
-                         hide_index=True, width="stretch")
-        with c2:
-            st.subheader("Aspects")
-            aspects = ac.find_aspects(trop)
-            if aspects:
-                st.dataframe(pd.DataFrame([{"Between": f"{a} and {b}", "Aspect": name.title(),
-                                            "Orb": f"{orb:.1f}°"} for a, b, name, orb, _ in aspects]),
-                             hide_index=True, width="stretch")
-            else:
-                st.write("No major aspects.")
-            st.caption("Green lines in the wheel are flowing aspects (trines, and dashed sextiles); "
-                       "brass lines are tense ones (squares and oppositions).")
-        if r["time_known"]:
-            st.subheader(f"Houses ({r['house_system_used']})")
-            st.dataframe(pd.DataFrame([{"House": h, "Sign": ac.SIGNS[ac.sign_index(r["houses"][str(h)])],
-                                        "Cusp": ac.fmt_deg(r["houses"][str(h)])} for h in range(1, 13)]),
-                         hide_index=True, width="stretch")
+def rising_samples(r):
+    """Ascendant every 10 minutes through the local birth day."""
+    s = st.session_state
+    key = ("explore_cache", r["jd"], r["birth_data"]["lat"], r["birth_data"]["lon"])
+    if s.get("explore_cache_key") == key:
+        return s.explore_cache
+    tz = pytz.timezone(r["birth_data"]["timezone"])
+    day = r["date_obj"]
+    out = []
+    for minute in range(0, 1441, 10):
+        local = tz.localize(datetime.combine(day, time(0, 0)) + timedelta(minutes=minute))
+        utc = local.astimezone(pytz.UTC)
+        jd = ae.julian_day(utc.year, utc.month, utc.day, utc.hour, utc.minute)
+        out.append((minute, ae.angles(jd, r["birth_data"]["lat"], r["birth_data"]["lon"])[0]))
+    s.explore_cache_key, s.explore_cache = key, out
+    return out
 
-    with tabs[1]:
-        c1, c2 = st.columns([1, 1], gap="large")
-        with c1:
-            html(ac.south_indian_svg(r["vedic_positions"], r["vedic_ascendant"], r["ayanamsa"]))
-        with c2:
-            st.subheader(f"Moon in {nak['name']}")
-            st.write(f"Pada {nak['pada']}, ruled by {nak['lord']}. {nak['meaning']}.")
-            st.dataframe(positions_table(r["vedic_positions"]), hide_index=True,
-                         width="stretch")
-            st.caption("Sidereal positions with the Lahiri ayanamsa. The chart uses the "
-                       "South Indian layout, where each sign keeps a fixed square.")
 
-    with tabs[2]:
-        html(ac.pillars_html(fp, r["time_known"]))
-        dm = fp["day"][0][1]
-        st.subheader(f"Day Master: {fp['day'][0][0]}, {dm}")
-        st.write(ELEMENT_TRAITS.get(dm, ""))
-        st.caption("Read from the right: year, month, day, hour. The year starts at Lichun "
-                   "(about 4 February) and each month on a solar term. The colours show the "
-                   "five elements.")
+def explorer_panel(r):
+    samples = rising_samples(r)
+    birth_min = None
+    start = time(12, 0)
+    if r["time_known"]:
+        hh, mm = map(int, r["birth_data"]["time"].split(":"))
+        birth_min, start = hh * 60 + mm, time(hh, mm)
+    t = st.slider("Slide through the day you were born", value=start, step=timedelta(minutes=10),
+                  format="HH:mm", key="explore_time")
+    minute = t.hour * 60 + t.minute
+    lon = min(samples, key=lambda x: abs(x[0] - minute))[1]
+    name, element, _, emoji, keywords, _ = C.sign(lon)
+    html(f'<div class="ar-big-line">At {t.strftime("%H:%M")} you\'d be {name} rising {emoji}</div>'
+         f'<p class="ar-hint">{", ".join(keywords).capitalize()}. '
+         + ("The gold dot is the time you gave." if birth_min is not None
+            else "Not sure of your time? See which Rising sign feels right.") + '</p>')
+    html(ac.rising_band_svg(samples, minute, birth_min))
 
-    with tabs[3]:
-        c1, c2 = st.columns([1.2, 1], gap="large")
-        with c1:
-            html(f'<div class="ar-maya">{ac.bar_dot_svg(tz["galactic_tone"])}<div>'
-                 f'<div class="ar-maya-name">{tz["galactic_tone"]} {tz["day_sign"]}</div>'
-                 f'<div class="ar-maya-sub">{tz["glyph"]}, kin {tz["kin"]} of 260</div></div></div>')
-            st.write(f"{tz['meaning']}. The number is your galactic tone, written the Maya way: "
-                     "a dot for one and a bar for five.")
-        with c2:
-            html(ac.tzolkin_svg(tz["kin"]))
-            st.caption("The 260-day count: 13 tones across, 20 day signs down.")
 
-    with tabs[4]:
-        vedic_primary = (ac.SIGNS[ac.sign_index(r["vedic_ascendant"])] + " rising"
-                         if r["time_known"] else ac.SIGNS[ac.sign_index(r["vedic_positions"]["Moon"])] + " Moon")
-        western_primary = (ac.SIGNS[ac.sign_index(r["ascendant"])] + " rising"
-                           if r["time_known"] else ac.SIGNS[ac.sign_index(trop["Sun"])] + " Sun")
-        st.dataframe(pd.DataFrame({
-            "Tradition": ["Western", "Vedic", "Chinese", "Maya"],
-            "Key placement": [western_primary, vedic_primary,
-                              f"{fp['day'][0][1]} Day Master", f"{tz['galactic_tone']} {tz['day_sign']}"],
-            "Measured against": ["The seasons (tropical zodiac)", "The stars (sidereal zodiac)",
-                                 "The solar terms and the 60-day cycle", "The 260-day count"],
-            "Speaks to": ["Personality and psychology", "Karma and life direction",
-                          "Balance of the five elements", "Purpose and spiritual tone"],
-        }), hide_index=True, width="stretch")
-
-    report = generate_report_text(r)
-    c1, c2 = st.columns([1, 3])
-    c1.download_button("Download the full report", data=report,
-                       file_name=f"astro_reveal_{r['birth_data']['date'].replace('-', '')}.txt",
-                       mime="text/plain", width="stretch")
-    with c2.expander("Read the full report here"):
-        st.text(report)
+def today_panel(r):
+    now = datetime.now(timezone.utc)
+    jd = ae.julian_day(now.year, now.month, now.day, now.hour, now.minute)
+    sky_now = ae.planetary_positions(jd)
+    phase, emoji, illum = C.moon_phase(sky_now["Sun"], sky_now["Moon"])
+    moon_sign = C.sign(sky_now["Moon"])
+    left, right = st.columns([1, 1.6], gap="large")
+    with left:
+        html(f'<div class="ar-moon">{emoji}</div>'
+             f'<p class="ar-cap"><b>{phase}</b>, {round(illum * 100)}% lit<br>'
+             f'Moon in {moon_sign[0]} {moon_sign[3]}</p>')
+    with right:
+        notes = C.transit_notes(sky_now, r["tropical_positions"], r["ascendant"])
+        html(f'<div class="ar-big-line">Today, for you</div>')
+        if not notes:
+            notes = [("🌤️", "A quiet sky for you today. Good for getting on with things.")]
+        html('<div class="ar-note-list">' + "".join(
+            f'<div class="ar-note"><b>{icon}</b>{escape(line)}</div>' for icon, line in notes) + '</div>')
+        html(f'<p class="ar-hint">Sky worked out for {now.strftime("%d %b %Y, %H:%M")} UTC.</p>')
 
 
 def render_ai(chart):
-    st.subheader("A written reading")
-    st.write("Gemini writes a reading from your exact placements. It takes about half a minute.")
-    c1, c2 = st.columns([2, 1])
-    focus = c1.selectbox("Focus", ["general", "career", "relationships", "health", "spiritual path"],
-                         key="ai_focus", format_func=str.capitalize)
-    c2.write("")
-    if c2.button("Write my reading", type="primary", key="ai_btn", width="stretch"):
+    c1, c2 = st.columns([2, 1], gap="medium")
+    focus = c1.segmented_control("Focus", ["general", "career", "relationships", "health", "spiritual path"],
+                                 default="general", key="ai_focus", format_func=str.capitalize,
+                                 label_visibility="collapsed") or "general"
+    if c2.button("✍️ Write my reading", type="primary", key="ai_btn", width="stretch"):
         with st.spinner("Writing your reading…"):
             st.session_state.ai_reading = generate_llm_interpretation(chart, focus=focus)
     if "ai_reading" in st.session_state:
-        with st.container(border=True):
+        with st.container(key="panel_ai"):
             st.markdown(st.session_state.ai_reading)
+
+
+def details(r):
+    trop, nak, fp, tz = r["tropical_positions"], r["nakshatra"], r["four_pillars"], r["tzolkin"]
+    st.write("")
+    with st.expander("🔭 All the details, for the curious"):
+        tabs = st.tabs(["Planets", "Vedic chart", "Four Pillars", "Maya count", "Report"])
+        with tabs[0]:
+            c1, c2 = st.columns([1.2, 1], gap="large")
+            c1.dataframe(positions_table(trop, r["houses"], r["retrograde"]), hide_index=True, width="stretch")
+            aspects = ac.find_aspects(trop)
+            if aspects:
+                c2.dataframe(pd.DataFrame([{"Aspect": f"{a} {name} {b}", "Orb": f"{orb:.1f}°"}
+                                           for a, b, name, orb, _ in aspects]), hide_index=True, width="stretch")
+            if r["time_known"]:
+                st.dataframe(pd.DataFrame([{"House": h, "Sign": ac.SIGNS[ac.sign_index(r["houses"][str(h)])],
+                                            "Cusp": ac.fmt_deg(r["houses"][str(h)])} for h in range(1, 13)]),
+                             hide_index=True, width="stretch")
+                st.caption(f"Houses: {r['house_system_used']}")
+        with tabs[1]:
+            c1, c2 = st.columns(2, gap="large")
+            with c1:
+                html(ac.south_indian_svg(r["vedic_positions"], r["vedic_ascendant"], r["ayanamsa"]))
+            c2.dataframe(positions_table(r["vedic_positions"]), hide_index=True, width="stretch")
+        with tabs[2]:
+            html(ac.pillars_html(fp, r["time_known"]))
+            dm = fp["day"][0][1]
+            st.write(f"**Day Master: {fp['day'][0][0]}, {dm}.** {ELEMENT_TRAITS.get(dm, '')}")
+        with tabs[3]:
+            c1, c2 = st.columns(2)
+            with c1:
+                html(ac.bar_dot_svg(tz["galactic_tone"]))
+                st.write(f"**{tz['galactic_tone']} {tz['day_sign']}**, kin {tz['kin']} of 260. {tz['meaning']}.")
+            with c2:
+                html(ac.tzolkin_svg(tz["kin"]))
+        with tabs[4]:
+            report = generate_report_text(r)
+            st.download_button("Download the full report", data=report,
+                               file_name=f"astro_reveal_{r['birth_data']['date'].replace('-', '')}.txt",
+                               mime="text/plain")
+            st.text(report)
 
 
 def render_admin():
@@ -666,25 +830,21 @@ def render_admin():
 def main():
     inject_css()
     init_state()
-    html('<div class="ar-wordmark"><span>✦</span>Astro Reveal</div>')
+    html('<div class="ar-wordmark">✨ Astro Reveal</div>')
 
     s = st.session_state
     r = s.get("calculation_results")
     if r is None or s.get("editing"):
         birth_form()
+    elif not s.get("game", {}).get("done"):
+        render_game(chart_summary(r))
     else:
-        birth_summary(r)
-        chart = chart_summary(r)
-        if not s.get("quiz_done"):
-            render_quiz(chart)
-        else:
-            render_results(r)
-            st.divider()
-            render_ai(chart)
+        render_results(r)
 
     render_admin()
-    html('<div class="ar-footer">Places from GeoNames (CC BY 4.0). Map data © OpenStreetMap '
-         'contributors, tiles © CARTO. Astrology describes tendencies, not fate.</div>')
+    html('<div class="ar-footer">Places from GeoNames (CC BY 4.0). Map © OpenStreetMap contributors. '
+         'Stars and constellation figures from d3-celestial by Olaf Frohn (BSD). '
+         'Astrology describes tendencies, not fate.</div>')
 
 
 if __name__ == "__main__":

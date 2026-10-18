@@ -23,23 +23,23 @@ It also does something unusual for an astrology app: it **honestly measures whet
 
 ## ✨ Features
 
-- **Four traditions, one chart**
-  - 🕉 **Vedic (sidereal)** — Lahiri ayanamsa, Sun to Neptune plus Rahu/Ketu, Moon nakshatra + pada, Lagna
-  - ♋ **Western (tropical)** — Sun/Moon/rising, Midheaven, planetary placements, house cusps (Placidus, Regiomontanus, Porphyry, Equal, Whole Sign)
-  - ☯ **Chinese Four Pillars (Bazi)** — Year/Month/Day/Hour pillars and your Day Master, with year and month changing on the solar terms
-  - 🌞 **Mayan Tzolkin** — day-sign, galactic tone, and kin (GMT 584283 correlation)
-- **🌌 An engraved chart wheel** — your real sky drawn like an astrolabe plate: signs, degree scale, houses, aspects, and a South Indian rasi chart, the Four Pillars in Chinese characters and the Maya bar-and-dot tone
-- **🤖 AI-powered readings** — dynamic, chart-specific interpretations via Google Gemini, written to ground every claim in your real data
-- **📍 Easy birth details** — type your town and pick it from the list (works offline, ~50,000 places); the timezone is set for you, historical daylight saving included. Fine-tune on the map, or tick *I don't know my birth time*
-- **📊 Cross-system comparison** — see where the traditions agree and where they tension
-- **📄 Downloadable report** — export the full chart as text
-- **🔬 Built-in honesty check** — a blind feedback system that tests prediction accuracy (see below)
+- **🎂 Three taps to start** — birthday, time (or *I don't know*), and town. Type your town and pick it (works offline, ~50,000 places); the timezone sets itself, daylight saving included. Your Sun sign pops up the moment you pick a date.
+- **🎮 A 60-second game** — pick the description that feels like you, one tap per round, before you see anything. It quietly tests whether astrology beats guessing (see below).
+- **🃏 Flip cards** — your Sun, Moon and Rising, each drawn with the real stars of its constellation. Tap to turn over.
+- **🎡 The chart wheel** — colour-coded by element; hover a planet to see where it was.
+- **🌌 The sky above you** — the actual stars, constellations and planets over your birthplace at the moment you were born.
+- **🌏 Around the world** — your Chinese year animal, Vedic Moon star (nakshatra) and Maya day sign, as cards.
+- **💞 Match with someone** — add anyone's birthday for a fun compatibility score (Sun elements, Moons, Venus and Mars, Chinese animals).
+- **⏳ Birth-time explorer** — slide through your birth day to watch your Rising sign change. Handy if you're not sure of the time.
+- **🌙 Today's sky** — the Moon's phase and sign today, and what it's touching in your chart.
+- **✍️ A written reading** by Google Gemini, grounded in your exact placements.
+- **🔭 All the details** — planet tables, aspects, houses (Placidus, Regiomontanus, Porphyry, Equal, Whole Sign), a South Indian rasi chart, the Four Pillars in Chinese characters, the 260-day Tzolkin count, and a downloadable report.
 
 ## 🔬 The honesty layer (what makes this different)
 
 Astrology readings are famously vulnerable to the [Barnum effect](https://en.wikipedia.org/wiki/Barnum_effect) — vague statements that feel personal but apply to everyone. `feedback_collector.py` is designed to cut straight through that.
 
-Right after you calculate, **before your chart is revealed**, the app asks five quick questions. For each chart factor (Sun sign, Ascendant, Moon nakshatra, Day Master, Tzolkin sign) it shows your *real* description shuffled among descriptions for **other** values of that same factor — no labels. You pick the one that fits you best, and (only if you agree) the app logs whether you picked your own. Because you haven't seen your chart yet, you can't just recognise the text. You can also skip it.
+Right after you enter your details, **before your chart is revealed**, the app plays a short game of up to four rounds. For each chart factor (Ascendant, Moon nakshatra, Day Master, Tzolkin sign; the Sun sign is left out because most people already know theirs) it shows your *real* description shuffled among descriptions for **other** values of that same factor — no labels. You pick the one that fits you best, and (only if you agree) the app logs whether you picked your own. Because you haven't seen your chart yet, you can't just recognise the text. You can also skip it.
 
 Then it compares your hit-rate against pure chance:
 
@@ -54,7 +54,8 @@ To see the running numbers, set `FEEDBACK_ADMIN_PASSWORD` in the app's Secrets; 
 | Layer | Tools |
 |-------|-------|
 | App / UI | [Streamlit](https://streamlit.io/) with a native theme (`.streamlit/config.toml`) and self-hosted fonts |
-| Maps & places | `folium` + `streamlit-folium`, `geonamescache` (GeoNames) |
+| Maps & places | `folium` + `streamlit-folium` with OpenStreetMap tiles, `geonamescache` (GeoNames) |
+| Stars | Constellation figures and star positions from [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD) |
 | Data | `pandas`, `pytz` |
 | AI readings | Google **Gemini** (`gemini-2.5-flash`) via the standard-library `urllib` — no heavy SDK |
 | Ephemeris | `astro_engine.py`, pure Python: Meeus Sun & Moon, JPL Keplerian elements for the planets, house systems, Lahiri ayanamsa, Bazi & Tzolkin |
@@ -89,12 +90,14 @@ The app opens at `http://localhost:8501`.
 
 ```
 Astro_Reveal/
-├── astro_calculator.py     # Streamlit app: UI, report, theme
+├── astro_calculator.py     # Streamlit app: the pages
 ├── astro_engine.py         # All the chart maths (python3 astro_engine.py runs its self-checks)
-├── astro_charts.py         # The wheel, rasi chart, pillars and Tzolkin drawings (SVG)
+├── astro_charts.py         # Every drawing: cards, wheel, sky map, explorer, score ring (SVG)
+├── astro_content.py        # Short texts, symbols and the compatibility game
+├── sky_data.py             # Stars and constellation figures (from d3-celestial, BSD)
 ├── places.py               # Offline birthplace search and timezone lookup
 ├── .streamlit/config.toml  # Theme: colours, fonts, corners
-├── static/fonts/           # IM Fell English, Instrument Sans, Noto Sans Symbols (OFL)
+├── static/fonts/           # Fraunces, Instrument Sans, Noto Sans Symbols (OFL)
 ├── llm_interpreter.py      # Gemini reading generator (chart → personalised text)
 ├── feedback_collector.py   # Blind MCQ accuracy test (the honesty layer)
 ├── requirements.txt        # Dependencies
