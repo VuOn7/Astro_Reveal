@@ -2,6 +2,8 @@
 
 # ✦ Astro_Reveal ✦
 
+*By [Bhuwan Awasthi](https://github.com/VuOn7).*
+
 **One birth chart, four ancient lenses.**
 Read your cosmic alignment through Vedic, Western, Chinese, and Mayan astrology — with AI-written readings grounded in your *exact* placements.
 
