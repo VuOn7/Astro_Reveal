@@ -28,8 +28,9 @@ It also does something unusual for an astrology app: it **honestly measures whet
   - ♋ **Western (tropical)** — Sun/Moon/rising, Midheaven, planetary placements, house cusps (Placidus, Regiomontanus, Porphyry, Equal, Whole Sign)
   - ☯ **Chinese Four Pillars (Bazi)** — Year/Month/Day/Hour pillars and your Day Master, with year and month changing on the solar terms
   - 🌞 **Mayan Tzolkin** — day-sign, galactic tone, and kin (GMT 584283 correlation)
+- **🌌 An engraved chart wheel** — your real sky drawn like an astrolabe plate: signs, degree scale, houses, aspects, and a South Indian rasi chart, the Four Pillars in Chinese characters and the Maya bar-and-dot tone
 - **🤖 AI-powered readings** — dynamic, chart-specific interpretations via Google Gemini, written to ground every claim in your real data
-- **🗺 Interactive birth-location map** — click anywhere, or pick from major cities / manual coordinates; every timezone, with historical daylight saving handled
+- **📍 Easy birth details** — type your town and pick it from the list (works offline, ~50,000 places); the timezone is set for you, historical daylight saving included. Fine-tune on the map, or tick *I don't know my birth time*
 - **📊 Cross-system comparison** — see where the traditions agree and where they tension
 - **📄 Downloadable report** — export the full chart as text
 - **🔬 Built-in honesty check** — a blind feedback system that tests prediction accuracy (see below)
@@ -52,8 +53,8 @@ To see the running numbers, set `FEEDBACK_ADMIN_PASSWORD` in the app's Secrets; 
 
 | Layer | Tools |
 |-------|-------|
-| App / UI | [Streamlit](https://streamlit.io/) + custom cosmic CSS theme |
-| Maps | `folium` + `streamlit-folium` |
+| App / UI | [Streamlit](https://streamlit.io/) with a native theme (`.streamlit/config.toml`) and self-hosted fonts |
+| Maps & places | `folium` + `streamlit-folium`, `geonamescache` (GeoNames) |
 | Data | `pandas`, `pytz` |
 | AI readings | Google **Gemini** (`gemini-2.5-flash`) via the standard-library `urllib` — no heavy SDK |
 | Ephemeris | `astro_engine.py`, pure Python: Meeus Sun & Moon, JPL Keplerian elements for the planets, house systems, Lahiri ayanamsa, Bazi & Tzolkin |
@@ -90,6 +91,10 @@ The app opens at `http://localhost:8501`.
 Astro_Reveal/
 ├── astro_calculator.py     # Streamlit app: UI, report, theme
 ├── astro_engine.py         # All the chart maths (python3 astro_engine.py runs its self-checks)
+├── astro_charts.py         # The wheel, rasi chart, pillars and Tzolkin drawings (SVG)
+├── places.py               # Offline birthplace search and timezone lookup
+├── .streamlit/config.toml  # Theme: colours, fonts, corners
+├── static/fonts/           # IM Fell English, Instrument Sans, Noto Sans Symbols (OFL)
 ├── llm_interpreter.py      # Gemini reading generator (chart → personalised text)
 ├── feedback_collector.py   # Blind MCQ accuracy test (the honesty layer)
 ├── requirements.txt        # Dependencies
