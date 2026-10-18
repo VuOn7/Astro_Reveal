@@ -1,6 +1,6 @@
 # Secrets - never commit these
 .env
-.streamlit/
+.streamlit/secrets.toml
 *.key
 
 # Collected user data and local logs

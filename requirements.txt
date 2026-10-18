@@ -1,5 +1,6 @@
-streamlit>=1.32
+streamlit>=1.50
 pandas
 pytz
 folium
-streamlit-folium
+streamlit-folium>=0.22
+geonamescache>=2.0
