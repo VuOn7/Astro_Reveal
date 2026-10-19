@@ -17,7 +17,10 @@ Run:  streamlit run astro_calculator.py
 """
 
 import hmac
+import importlib
+import inspect
 import os
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from html import escape
 
@@ -32,6 +35,14 @@ import places
 from feedback_collector import (ELEMENT_TRAITS, build_feedback_form, chart_id_for,
                                 record_response, summarize_log)
 from llm_interpreter import build_chart_summary, generate_llm_interpretation
+
+# Streamlit Cloud can keep old copies of these modules after an update; reload them
+# so the page never runs new code against an old helper.
+for _m in (ae, C, ac, places):
+    importlib.reload(_m)
+
+# Buttons directly inside columns get cut to one line with "…" unless wrap=True.
+WRAP = {"wrap": True} if "wrap" in inspect.signature(st.button).parameters else {}
 
 try:
     if "GEMINI_API_KEY" in st.secrets:
@@ -121,12 +132,31 @@ iframe[title="streamlit_folium.st_folium"] {{ border-radius: 1.4rem; }}
 """
 
 
+def _scope(css):
+    """Prefix selectors with .stApp so they outrank Streamlit's markdown styles
+    (it sets `p, li { font-size: inherit }`, which would shrink our text)."""
+    out = []
+    for line in css.splitlines():
+        if not line.strip():
+            continue
+        m = re.match(r"^(\s*)([.\[][^{@]*?)\s*\{(.*)$", line)
+        if m:
+            indent, sels, rest = m.groups()
+            line = f"{indent}{', '.join('.stApp ' + x.strip() for x in sels.split(','))} {{{rest}"
+        out.append(line)
+    return "\n".join(out)
+
+
 def inject_css():
-    st.html(ac.STYLE + APP_CSS)
+    st.markdown(_scope(ac.STYLE + APP_CSS), unsafe_allow_html=True)
 
 
 def html(markup):
-    st.html(markup)
+    # st.markdown, not st.html: st.html sanitises to HTML only and strips every SVG
+    # (the wheel, sky map, constellations...). Wrapping in a <div> makes markdown
+    # pass the whole snippet through untouched.
+    st.markdown('<div class="ar-wrap">' + markup.replace("\n", " ") + "</div>",
+                unsafe_allow_html=True)
 
 
 def section(title, sub=None):
@@ -356,7 +386,9 @@ def generate_report_text(r):
 # ===========================================================================
 #  STEP 1: BIRTH DETAILS
 # ===========================================================================
-FORM_KEYS = ("bd", "bt", "bt_unknown", "place_query", "house_system")
+FORM_KEYS = ("bd_day", "bd_month", "bd_year", "bt", "bt_unknown", "place_query", "house_system")
+MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+          "September", "October", "November", "December"]
 
 
 def init_state():
@@ -365,12 +397,14 @@ def init_state():
     s.setdefault("map_origin", [s.place["lat"], s.place["lon"]])
     s.setdefault("map_center", list(s.map_origin))
     s.setdefault("map_zoom", 6)
-    s.setdefault("form_memory", {"bd": None, "bt": time(12, 0), "bt_unknown": False,
+    s.setdefault("form_memory", {"bd_day": None, "bd_month": None, "bd_year": None,
+                                 "bt": time(12, 0), "bt_unknown": False,
                                  "place_query": "", "house_system": "Placidus"})
     # widgets forget their values while hidden; bring them back from memory
     for k in FORM_KEYS:
-        if k not in s:
+        if k not in s and s.form_memory.get(k) is not None:
             s[k] = s.form_memory[k]
+    s.setdefault("bd", None)
 
 
 def sun_sign_on(d):
@@ -383,17 +417,38 @@ def pill(text, colours):
     return f'<span class="ar-pill" style="background:{tint};color:{ink}">{text}</span>'
 
 
+def birthday_picker(prefix):
+    """Day / Month / Year dropdowns. Type in the year box to jump to it.
+    Returns the date, or None until all three are picked (or if it isn't real)."""
+    c1, c2, c3 = st.columns([1, 1.5, 1.2], gap="small")
+    day = c1.selectbox("Day", list(range(1, 32)), index=None, placeholder="Day",
+                       key=f"{prefix}_day", label_visibility="collapsed")
+    month = c2.selectbox("Month", list(range(1, 13)), index=None, placeholder="Month",
+                         format_func=lambda m: MONTHS[m - 1], key=f"{prefix}_month",
+                         label_visibility="collapsed")
+    year = c3.selectbox("Year", list(range(date.today().year, ae.MIN_DATE.year - 1, -1)),
+                        index=None, placeholder="Year", key=f"{prefix}_year",
+                        label_visibility="collapsed")
+    if not (day and month and year):
+        return None
+    try:
+        return date(year, month, day)
+    except ValueError:
+        html(f'<p class="ar-hint">{MONTHS[month - 1]} {year} has no day {day}.</p>')
+        return None
+
+
 def date_card():
+    s = st.session_state
     with st.container(key="card_date"):
         html('<div class="ar-card-title"><span>🎂</span>Birthday</div>')
-        d = st.date_input("Birthday", key="bd", min_value=ae.MIN_DATE, max_value=ae.MAX_DATE,
-                          label_visibility="collapsed", format="DD/MM/YYYY")
+        d = s.bd = birthday_picker("bd")
         if d:
             name, element, _, emoji, _, _ = sun_sign_on(d)
             html(pill(f"☀️ That makes you a {name} {emoji}", C.ELEMENTS[element]))
             html(f'<div class="ar-mini-art">{ac.constellation_svg(C.SIGN_NAMES.index(name), 280, 110)}</div>')
         else:
-            html('<p class="ar-hint">Pick the day you were born.</p>')
+            html('<p class="ar-hint">Tip: type in the Year box, e.g. 1990.</p>')
 
 
 def time_card():
@@ -481,7 +536,7 @@ def chart_settings():
                               format="%.4f", key="lat_input")
         lon = c2.number_input("Longitude", -180.0, 180.0, float(s.place["lon"]), 0.0001,
                               format="%.4f", key="lon_input")
-        if st.button("Use these coordinates"):
+        if st.button("Use these coordinates", **WRAP):
             set_place(place_from_point(lat, lon), recentre=True, zoom=10)
             st.rerun()
 
@@ -516,9 +571,9 @@ def birth_form():
             html(f'<div class="ar-ticket">{escape(when)}<br><span>{escape(s.place["label"])}</span></div>')
             with st.container(key="cta"):
                 go = st.button("Show me my sky ✨", type="primary", width="stretch",
-                               disabled=s.bd is None)
+                               disabled=s.bd is None, **WRAP)
             if s.get("editing") and s.get("calculation_results"):
-                if st.button("Back to my chart", width="stretch"):
+                if st.button("Back to my chart", width="stretch", **WRAP):
                     s.editing = False
                     st.rerun()
             chart_settings()
@@ -535,7 +590,7 @@ def reveal():
     except Exception as e:
         st.error(f"Couldn't work out the chart: {e}. Check the date, time and place.")
         return
-    s.form_memory = {k: s[k] for k in FORM_KEYS}
+    s.form_memory = {k: s.get(k) for k in FORM_KEYS}
     s.calculation_results = r
     s.editing = False
     for key in list(s.keys()):
@@ -576,12 +631,12 @@ def render_game(chart):
                 for k in (row, row + 1):
                     if k < len(q["short"]) and cols[k - row].button(
                             f"{TILE_SHAPES[k]}  {q['short'][k]}", key=f"game_{g['round']}_{k}",
-                            width="stretch"):
+                            width="stretch", **WRAP):
                         g["answers"][g["round"]] = k
                         g["round"] += 1
                         st.rerun()
         st.write("")
-        if st.button("Skip the game", key="game_skip"):
+        if st.button("Skip the game", key="game_skip", **WRAP):
             g["done"] = True
             st.rerun()
         return
@@ -591,8 +646,8 @@ def render_game(chart):
          'No birth details are saved.</p>')
     c1, c2, _ = st.columns([1, 1, 1.4], gap="medium")
     with c1.container(key="cta"):
-        share = st.button("Yes, use my answers", type="primary", width="stretch", key="game_yes")
-    keep_private = c2.button("No thanks", width="stretch", key="game_no")
+        share = st.button("Yes, use my answers", type="primary", width="stretch", key="game_yes", **WRAP)
+    keep_private = c2.button("No thanks", width="stretch", key="game_no", **WRAP)
     if share:
         cid = chart_id_for(chart)
         for i, choice in g["answers"].items():
@@ -621,7 +676,7 @@ def top_bar(r):
         when = long_date(r["date_obj"]) + (f", {r['birth_data']['time']}" if r["time_known"] else "")
         html(f'<p class="ar-summary" style="text-align:left">Born <b>{escape(when)}</b> in '
              f'<b>{escape(r["place_label"])}</b></p>')
-    if c2.button("✏️ Change details", width="stretch"):
+    if c2.button("✏️ Change details", width="stretch", **WRAP):
         st.session_state.editing = True
         st.rerun()
 
@@ -677,8 +732,7 @@ def match_panel(r):
     with left:
         html('<div class="ar-big-line">Who are you curious about?</div>')
         name = st.text_input("Their name", key="match_name", placeholder="Their name (optional)")
-        their_day = st.date_input("Their birthday", value=None, key="match_date",
-                                  min_value=ae.MIN_DATE, max_value=ae.MAX_DATE, format="DD/MM/YYYY")
+        their_day = birthday_picker("match")
         html('<p class="ar-hint">Just for fun. A birthday is enough.</p>')
     with right:
         if not their_day:
@@ -764,7 +818,7 @@ def render_ai(chart):
     focus = c1.segmented_control("Focus", ["general", "career", "relationships", "health", "spiritual path"],
                                  default="general", key="ai_focus", format_func=str.capitalize,
                                  label_visibility="collapsed") or "general"
-    if c2.button("✍️ Write my reading", type="primary", key="ai_btn", width="stretch"):
+    if c2.button("✍️ Write my reading", type="primary", key="ai_btn", width="stretch", **WRAP):
         with st.spinner("Writing your reading…"):
             st.session_state.ai_reading = generate_llm_interpretation(chart, focus=focus)
     if "ai_reading" in st.session_state:
